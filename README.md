@@ -39,6 +39,18 @@ docker run -d -p 8080:8080 -e MYWA_API_KEY=$MYWA_API_KEY -v mywa-data:/data mywa
 | `MYWA_DB_PATH` | `mywa.db` | SQLite file. It holds the WhatsApp credentials, so protect it like a password. |
 | `MYWA_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
+## Link from the browser
+
+Open the server's root URL, e.g. `http://localhost:8080/`. The page asks for the API
+key, creates session `main` if needed, and shows the QR code, which refreshes live as
+WhatsApp rotates it. Once you scan it, the page shows the linked number, with
+Disconnect and Log out buttons.
+
+- Append `#key=<api key>` to the URL to skip the prompt. Browsers don't send the
+  part after `#` to the server, and the page removes it from the address bar.
+- Add `?session=<id>` to link a session other than `main`.
+- The page itself holds no data; everything it does goes through the API with your key.
+
 ## Walkthrough
 
 ```sh
@@ -79,6 +91,7 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/` | Browser page for linking by QR (see above), no auth |
 | GET | `/health` | Liveness check, no auth |
 | POST | `/sessions` | `{"id": "main"}`. The id is 1–64 characters of `A-Za-z0-9_-`. |
 | GET | `/sessions` | All sessions |

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>mywa · Link WhatsApp</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #5d6470; --line: #e2e5ea;
+    --accent: #128c4a; --accent-text: #ffffff; --warn: #a15c00; --err: #b42318; --qr-bg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101215; --card: #191c21; --text: #e8eaed; --muted: #9aa1ab; --line: #2b3038;
+      --accent: #25b866; --accent-text: #0b1a11; --warn: #f0b45a; --err: #ff7b72; --qr-bg: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main {
+    width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 28px 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 16px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--accent); } .dot.wait { background: var(--warn); } .dot.bad { background: var(--err); }
+  .qr {
+    background: var(--qr-bg); border-radius: 12px; padding: 12px; aspect-ratio: 1; width: 100%;
+    display: grid; place-items: center; border: 1px solid var(--line);
+  }
+  .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
+  .qr .ph { color: #5d6470; font-size: 14px; text-align: center; padding: 16px; }
+  ol { padding-left: 20px; color: var(--muted); margin: 16px 0 0; }
+  ol b { color: var(--text); font-weight: 600; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 12px; }
+  .err { color: var(--err); margin-top: 12px; white-space: pre-wrap; }
+  .account { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
+  .account div { color: var(--muted); font-size: 13px; }
+  .account strong { display: block; font-size: 17px; word-break: break-all; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  button {
+    flex: 1; min-width: 120px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button:disabled { opacity: .6; cursor: default; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Link WhatsApp</h1>
+  <p class="sub">Session <b id="sid">main</b></p>
+
+  <section id="login" hidden>
+    <form id="keyform">
+      <label for="key">API key</label>
+      <input id="key" type="password" autocomplete="current-password" required>
+      <div class="row"><button class="primary" type="submit">Continue</button></div>
+    </form>
+    <p class="note">The key is kept in this browser only.</p>
+  </section>
+
+  <section id="app" hidden>
+    <div class="status"><span class="dot" id="dot"></span><span id="stext">Loading…</span></div>
+
+    <div id="qrbox">
+      <div class="qr"><div class="ph" id="qrph">Preparing QR code…</div><img id="qrimg" alt="WhatsApp link QR code" hidden></div>
+      <ol>
+        <li>Open <b>WhatsApp</b> on your phone</li>
+        <li>Go to <b>Settings → Linked devices → Link a device</b></li>
+        <li>Point your phone at this QR code</li>
+      </ol>
+      <p class="note">The code refreshes automatically about every 20 seconds.</p>
+    </div>
+
+    <div id="linked" hidden>
+      <div class="account"><div>Linked account</div><strong id="acct"></strong><div id="acctname"></div></div>
+    </div>
+
+    <div class="row">
+      <button class="primary" id="btnConnect" hidden>New QR code</button>
+      <button id="btnDisconnect" hidden>Disconnect</button>
+      <button id="btnLogout" hidden>Log out</button>
+    </div>
+    <p class="err" id="err" hidden></p>
+    <div class="row"><button id="btnForget" type="button">Forget key</button></div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const sid = params.get("session") || "main";
+  const KEY_STORE = "mywa.apikey";
+  const $ = (id) => document.getElementById(id);
+  $("sid").textContent = sid;
+
+  // A key in the URL fragment (#key=...) is never sent to the server. Save it and strip it from the address bar.
+  const frag = new URLSearchParams(location.hash.slice(1));
+  if (frag.get("key")) {
+    try { localStorage.setItem(KEY_STORE, frag.get("key")); } catch {}
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+  let key = "";
+  try { key = localStorage.getItem(KEY_STORE) || ""; } catch {}
+
+  let ws = null, pollTimer = null, qrURL = null, lastStatus = "";
+
+  async function api(method, path, body) {
+    const res = await fetch(path, {
+      method, headers: { "X-API-Key": key, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined, cache: "no-store",
+    });
+    if (res.status === 401) { forget("That API key was not accepted."); throw new Error("unauthorized"); }
+    return res;
+  }
+
+  function showError(msg) { $("err").hidden = !msg; $("err").textContent = msg || ""; }
+
+  function forget(msg) {
+    try { localStorage.removeItem(KEY_STORE); } catch {}
+    key = ""; if (ws) ws.close(); clearInterval(pollTimer);
+    $("app").hidden = true; $("login").hidden = false;
+    if (msg) { $("key").value = ""; $("key").placeholder = msg; }
+  }
+
+  const LABELS = {
+    created: ["Not linked", "bad"], connecting: ["Connecting…", "wait"], qr_ready: ["Scan the QR code", "wait"],
+    ready: ["Linked", "ok"], disconnected: ["Disconnected", "bad"], logged_out: ["Logged out", "bad"],
+    failed: ["Failed", "bad"], action_required: ["Action required", "bad"],
+  };
+
+  async function refreshQR() {
+    const res = await api("GET", `/sessions/${encodeURIComponent(sid)}/qr?format=png&t=${Date.now()}`);
+    if (!res.ok) return;
+    const blob = await res.blob();
+    if (qrURL) URL.revokeObjectURL(qrURL);
+    qrURL = URL.createObjectURL(blob);
+    $("qrimg").src = qrURL; $("qrimg").hidden = false; $("qrph").hidden = true;
+  }
+
+  function render(info) {
+    const st = info.status;
+    const [label, cls] = LABELS[st] || [st, ""];
+    $("stext").textContent = label; $("dot").className = "dot " + cls;
+    const linked = st === "ready";
+    $("linked").hidden = !linked; $("qrbox").hidden = linked;
+    if (linked) {
+      $("acct").textContent = "+" + (info.jid || "").split("@")[0];
+      $("acctname").textContent = info.pushName || "";
+    }
+    if (st !== "qr_ready") {
+      $("qrimg").hidden = true; $("qrph").hidden = false;
+      $("qrph").textContent = st === "connecting" ? "Connecting to WhatsApp…" : "No QR code right now.";
+    }
+    const idle = ["created", "disconnected", "logged_out", "failed", "action_required"].includes(st);
+    $("btnConnect").hidden = !idle;
+    $("btnConnect").textContent = st === "disconnected" ? "Reconnect" : "New QR code";
+    $("btnDisconnect").hidden = !(linked || st === "qr_ready" || st === "connecting");
+    $("btnLogout").hidden = !(linked || st === "disconnected");
+    showError(info.error || "");
+    if (st === "qr_ready" && lastStatus !== "qr_ready") refreshQR();
+    lastStatus = st;
+  }
+
+  async function loadStatus() {
+    const res = await api("GET", `/sessions/${encodeURIComponent(sid)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error((await res.json()).error);
+    return res.json();
+  }
+
+  async function connect() {
+    $("btnConnect").disabled = true;
+    try {
+      const res = await api("POST", `/sessions/${encodeURIComponent(sid)}/connect`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error);
+      render(body);
+    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
+    finally { $("btnConnect").disabled = false; }
+  }
+
+  function openEvents() {
+    if (ws) ws.close();
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${proto}//${location.host}/events?session=${encodeURIComponent(sid)}&api_key=${encodeURIComponent(key)}`);
+    ws.onmessage = (e) => {
+      const ev = JSON.parse(e.data);
+      if (ev.event === "session.status") render(ev.data);
+      if (ev.event === "session.qr") refreshQR();
+    };
+    ws.onclose = () => { if (key) setTimeout(openEvents, 3000); };
+  }
+
+  async function start() {
+    $("login").hidden = true; $("app").hidden = false;
+    try {
+      let info = await loadStatus();
+      if (!info) {
+        const res = await api("POST", "/sessions", { id: sid });
+        info = await res.json();
+        if (!res.ok) throw new Error(info.error);
+      }
+      render(info);
+      openEvents();
+      // Fallback in case the WebSocket is blocked: poll the status.
+      clearInterval(pollTimer);
+      pollTimer = setInterval(async () => { try { const i = await loadStatus(); if (i) render(i); } catch {} }, 5000);
+      if (["created", "logged_out"].includes(info.status)) connect();
+    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
+  }
+
+  async function action(path, confirmMsg) {
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    try {
+      const res = await api("POST", `/sessions/${encodeURIComponent(sid)}/${path}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error);
+      render(body);
+    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
+  }
+
+  $("btnConnect").onclick = connect;
+  $("btnDisconnect").onclick = () => action("disconnect");
+  $("btnLogout").onclick = () => action("logout", "Unlink this device from your WhatsApp account?");
+  $("btnForget").onclick = () => forget("");
+  $("keyform").onsubmit = (e) => {
+    e.preventDefault();
+    key = $("key").value.trim();
+    try { localStorage.setItem(KEY_STORE, key); } catch {}
+    start();
+  };
+
+  if (key) start(); else $("login").hidden = false;
+})();
+</script>
+</body>
+</html>

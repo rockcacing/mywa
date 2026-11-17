@@ -9,12 +9,13 @@ import (
 	"time"
 )
 
-// auth requires the X-API-Key header on every route except /health. The /events
+// auth requires the X-API-Key header on every route except /health and the link page
+// (/ and /favicon.ico), which holds no data itself. The /events
 // WebSocket also accepts ?api_key= because browsers can't set headers on WebSockets.
 func (s *Server) auth(next http.Handler) http.Handler {
 	want := sha256.Sum256([]byte(s.apiKey))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
+		if p := r.URL.Path; p == "/health" || p == "/" || p == "/favicon.ico" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -51,7 +52,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		level := slog.LevelInfo
-		if r.URL.Path == "/health" {
+		if p := r.URL.Path; p == "/health" || p == "/" || p == "/favicon.ico" {
 			level = slog.LevelDebug
 		}
 		s.log.Log(r.Context(), level, "http",

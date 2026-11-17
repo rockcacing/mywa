@@ -131,6 +131,12 @@ func TestAuth(t *testing.T) {
 	if resp, _ := do(t, ts, "GET", "/health", "", false); resp.StatusCode != 200 {
 		t.Fatalf("/health without key: %d", resp.StatusCode)
 	}
+	if resp, body := do(t, ts, "GET", "/", "", false); resp.StatusCode != 200 || !strings.Contains(string(body), "Link WhatsApp") {
+		t.Fatalf("/ without key: %d", resp.StatusCode)
+	}
+	if resp, _ := do(t, ts, "GET", "/nope", "", true); resp.StatusCode != 404 {
+		t.Fatalf("unknown path: %d", resp.StatusCode)
+	}
 	if resp, _ := do(t, ts, "GET", "/sessions", "", false); resp.StatusCode != 401 {
 		t.Fatalf("/sessions without key: %d", resp.StatusCode)
 	}

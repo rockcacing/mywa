@@ -42,6 +42,8 @@ func New(mgr Manager, h *hub.Hub, apiKey string, log *slog.Logger) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.health)
+	mux.HandleFunc("GET /{$}", s.index)
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
 	mux.HandleFunc("POST /sessions", s.createSession)
 	mux.HandleFunc("GET /sessions", s.listSessions)
