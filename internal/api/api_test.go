@@ -97,6 +97,44 @@ func (f *fakeManager) ListMessages(_ context.Context, id, chatID string, before 
 	return []store.Message{{ID: "x", ChatID: chatID, Timestamp: before, Type: "text", Text: strings.Repeat("a", limit)}}, nil
 }
 
+func (f *fakeManager) Media(_ context.Context, id, chatID, msgID string, thumb bool) (wa.Media, error) {
+	switch msgID {
+	case "img":
+		return wa.Media{Data: []byte("\xff\xd8jpeg"), Mimetype: "image/jpeg"}, nil
+	case "doc":
+		return wa.Media{Data: []byte("<script>alert(1)</script>"), Mimetype: "text/html", FileName: "évil.html"}, nil
+	case "old":
+		return wa.Media{}, wa.ErrMediaExpired
+	}
+	return wa.Media{}, wa.ErrNoMedia
+}
+
+func TestMedia(t *testing.T) {
+	ts, f, _ := newTestServer(t)
+	f.sessions["main"] = wa.Info{ID: "main"}
+	base := "/sessions/main/chats/1@s.whatsapp.net/messages/"
+	resp, body := do(t, ts, "GET", base+"img/media", "", true)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/jpeg" || resp.Header.Get("Content-Disposition") != "" || string(body) != "\xff\xd8jpeg" {
+		t.Fatalf("image: %d %v", resp.StatusCode, resp.Header)
+	}
+	if !strings.Contains(resp.Header.Get("Content-Security-Policy"), "sandbox") {
+		t.Fatal("media served without sandbox CSP")
+	}
+	resp, _ = do(t, ts, "GET", base+"doc/media", "", true)
+	if resp.Header.Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
+		t.Fatalf("html document must download, got %v", resp.Header)
+	}
+	if resp, body := do(t, ts, "GET", base+"old/media", "", true); resp.StatusCode != 410 || !strings.Contains(string(body), "MEDIA_EXPIRED") {
+		t.Fatalf("expired: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := do(t, ts, "GET", base+"none/media", "", true); resp.StatusCode != 404 {
+		t.Fatalf("no media: %d", resp.StatusCode)
+	}
+	if resp, _ := do(t, ts, "GET", base+"img/media", "", false); resp.StatusCode != 401 {
+		t.Fatalf("media without key: %d", resp.StatusCode)
+	}
+}
+
 func newTestServer(t *testing.T) (*httptest.Server, *fakeManager, *hub.Hub) {
 	t.Helper()
 	f := &fakeManager{sessions: map[string]wa.Info{}}

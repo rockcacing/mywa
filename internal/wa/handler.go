@@ -9,6 +9,7 @@ import (
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/rockcacing/mywa/internal/hub"
 	mystore "github.com/rockcacing/mywa/internal/store"
@@ -129,6 +130,11 @@ func (s *Session) onMessage(ctx context.Context, cli *whatsmeow.Client, e *event
 		Text:      content.Text,
 		Status:    mystore.StatusReceived,
 		QuotedID:  content.QuotedID,
+	}
+	if part, mi := mediaPart(e.Message); part != nil {
+		if blob, err := proto.Marshal(part); err == nil {
+			m.MediaBlob, m.Media = blob, mi
+		}
 	}
 	if info.IsFromMe {
 		m.Status = mystore.StatusSent

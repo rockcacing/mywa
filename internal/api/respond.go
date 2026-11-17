@@ -43,6 +43,12 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, "INVALID_STATE", err.Error())
 	case errors.Is(err, wa.ErrNoQR):
 		writeError(w, http.StatusNotFound, "NO_QR", "no QR code available; connect the session and wait for status qr_ready")
+	case errors.Is(err, wa.ErrNoMedia):
+		writeError(w, http.StatusNotFound, "NO_MEDIA", err.Error())
+	case errors.Is(err, wa.ErrMediaExpired):
+		writeError(w, http.StatusGone, "MEDIA_EXPIRED", err.Error())
+	case errors.Is(err, wa.ErrTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "MEDIA_TOO_LARGE", err.Error())
 	case errors.Is(err, wa.ErrUpstream):
 		writeError(w, http.StatusBadGateway, "WHATSAPP_ERROR", err.Error())
 	default:

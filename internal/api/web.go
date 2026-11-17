@@ -18,7 +18,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("X-Frame-Options", "DENY")
 	h.Set("Content-Security-Policy",
-		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; "+
+		"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob:; media-src blob:; "+
 			"connect-src 'self' wss://"+r.Host+" ws://"+r.Host+"; form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
 	_, _ = w.Write(indexHTML)
 }

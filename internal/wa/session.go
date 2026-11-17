@@ -408,6 +408,7 @@ func (s *Session) unlink(ctx context.Context, deleteDevice bool) {
 	if err := s.m.db.PurgeSessionData(ctx, s.id); err != nil {
 		s.log.Error("purge session data", "err", err)
 	}
+	s.m.removeMediaCache(s.id)
 }
 
 func (s *Session) readyClient() (*whatsmeow.Client, error) {

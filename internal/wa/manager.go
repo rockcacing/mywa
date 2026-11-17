@@ -50,6 +50,7 @@ type Manager struct {
 	container *sqlstore.Container
 	hub       *hub.Hub
 	log       *slog.Logger
+	mediaDir  string // cache for downloaded attachments
 
 	mu       sync.Mutex
 	sessions map[string]*Session
@@ -57,13 +58,13 @@ type Manager struct {
 
 // NewManager prepares whatsmeow's device store inside db and loads the saved sessions.
 // Call Restore afterwards to reconnect the ones that were online.
-func NewManager(ctx context.Context, db *mystore.Store, h *hub.Hub, log *slog.Logger) (*Manager, error) {
+func NewManager(ctx context.Context, db *mystore.Store, h *hub.Hub, mediaDir string, log *slog.Logger) (*Manager, error) {
 	store.SetOSInfo("mywa", [3]uint32{0, 1, 0})
 	container := sqlstore.NewWithDB(db.DB, "sqlite", newWALogger(log.With("component", "whatsmeow-store")))
 	if err := container.Upgrade(ctx); err != nil {
 		return nil, fmt.Errorf("upgrade whatsmeow store: %w", err)
 	}
-	m := &Manager{db: db, container: container, hub: h, log: log, sessions: map[string]*Session{}}
+	m := &Manager{db: db, container: container, hub: h, mediaDir: mediaDir, log: log, sessions: map[string]*Session{}}
 	rows, err := db.ListSessions(ctx)
 	if err != nil {
 		return nil, err
@@ -212,7 +213,17 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	m.mu.Lock()
 	delete(m.sessions, id)
 	m.mu.Unlock()
+	m.removeMediaCache(id)
 	return nil
+}
+
+// Media returns a message's attachment, or with thumb its embedded preview image.
+func (m *Manager) Media(ctx context.Context, id, chatID, msgID string, thumb bool) (Media, error) {
+	s, err := m.get(id)
+	if err != nil {
+		return Media{}, err
+	}
+	return s.Media(ctx, chatID, msgID, thumb)
 }
 
 // SendTextRequest is the body of POST /sessions/{id}/messages/send-text.

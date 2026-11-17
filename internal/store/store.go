@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS messages (
 	status      TEXT    NOT NULL DEFAULT '',
 	quoted_id   TEXT    NOT NULL DEFAULT '',
 	edited      INTEGER NOT NULL DEFAULT 0,
+	media       BLOB,
+	media_info  TEXT    NOT NULL DEFAULT '',
 	PRIMARY KEY (session_id, chat_jid, id)
 );
 CREATE INDEX IF NOT EXISTS messages_chat_ts ON messages(session_id, chat_jid, ts DESC);
@@ -83,7 +85,39 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	// Columns added after the first release; CREATE TABLE IF NOT EXISTS skips existing tables.
+	for _, c := range []struct{ table, col, decl string }{
+		{"messages", "media", "BLOB"},
+		{"messages", "media_info", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := addColumn(ctx, db, c.table, c.col, c.decl); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrate %s.%s: %w", c.table, c.col, err)
+		}
+	}
 	return &Store{DB: db}, nil
+}
+
+func addColumn(ctx context.Context, db *sql.DB, table, col, decl string) error {
+	rows, err := db.QueryContext(ctx, `SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		if name == col {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+col+` `+decl)
+	return err
 }
 
 func (s *Store) Close() error { return s.DB.Close() }

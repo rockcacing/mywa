@@ -43,7 +43,7 @@ func run() error {
 	defer db.Close()
 
 	h := hub.New()
-	mgr, err := wa.NewManager(ctx, db, h, log)
+	mgr, err := wa.NewManager(ctx, db, h, cfg.MediaDir, log)
 	if err != nil {
 		return err
 	}

@@ -73,3 +73,34 @@ func TestParseChatID(t *testing.T) {
 		}
 	}
 }
+
+func TestMediaPart(t *testing.T) {
+	in := &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
+		Mimetype: proto.String("image/jpeg"), Width: proto.Uint32(800), Height: proto.Uint32(600),
+		JPEGThumbnail: []byte{1, 2}, DirectPath: proto.String("/v/x"), MediaKey: []byte{9},
+		ContextInfo: &waE2E.ContextInfo{StanzaID: proto.String("Q")},
+	}}
+	part, info := mediaPart(in)
+	if part.GetImageMessage().GetContextInfo() != nil {
+		t.Fatal("context info not stripped")
+	}
+	if in.GetImageMessage().GetContextInfo() == nil {
+		t.Fatal("original message modified")
+	}
+	if info.Width != 800 || info.Height != 600 || !info.HasThumb || info.Mimetype != "image/jpeg" {
+		t.Fatalf("info = %+v", info)
+	}
+	d, thumb, mime, _, _ := downloadable(part)
+	if d == nil || d.GetDirectPath() != "/v/x" || len(thumb) != 2 || mime != "image/jpeg" {
+		t.Fatal("downloadable did not round-trip")
+	}
+	if p, i := mediaPart(&waE2E.Message{Conversation: proto.String("hi")}); p != nil || i != nil {
+		t.Fatal("text message reported media")
+	}
+	for mt, ok := range map[string]bool{"image/jpeg": true, "video/mp4": true, "audio/ogg; codecs=opus": true,
+		"image/svg+xml": false, "text/html": false, "application/pdf": false} {
+		if SafeInlineType(mt) != ok {
+			t.Errorf("SafeInlineType(%q) = %v", mt, !ok)
+		}
+	}
+}

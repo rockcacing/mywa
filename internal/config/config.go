@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -12,6 +13,7 @@ type Config struct {
 	Addr     string     // MYWA_ADDR, default ":8080"
 	APIKey   string     // MYWA_API_KEY, required
 	DBPath   string     // MYWA_DB_PATH, default "mywa.db"
+	MediaDir string     // MYWA_MEDIA_DIR, default "media" next to the database
 	LogLevel slog.Level // MYWA_LOG_LEVEL: debug|info|warn|error, default info
 }
 
@@ -21,6 +23,7 @@ func Load() (Config, error) {
 		APIKey: os.Getenv("MYWA_API_KEY"),
 		DBPath: env("MYWA_DB_PATH", "mywa.db"),
 	}
+	c.MediaDir = env("MYWA_MEDIA_DIR", filepath.Join(filepath.Dir(c.DBPath), "media"))
 	if err := c.LogLevel.UnmarshalText([]byte(env("MYWA_LOG_LEVEL", "info"))); err != nil {
 		return c, errors.New("MYWA_LOG_LEVEL must be one of debug, info, warn, error")
 	}

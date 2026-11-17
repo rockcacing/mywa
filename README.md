@@ -37,6 +37,7 @@ docker run -d -p 8080:8080 -e MYWA_API_KEY=$MYWA_API_KEY -v mywa-data:/data mywa
 | `MYWA_API_KEY` | (required) | Sent as the `X-API-Key` header |
 | `MYWA_ADDR` | `:8080` | Listen address |
 | `MYWA_DB_PATH` | `mywa.db` | SQLite file. It holds the WhatsApp credentials, so protect it like a password. |
+| `MYWA_MEDIA_DIR` | `media` next to the database | Cache of downloaded attachments |
 | `MYWA_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 ## Link from the browser
@@ -50,6 +51,8 @@ WhatsApp rotates it. Once you scan it, the page switches to your chats:
 - The list is newest activity first, with unread counts, a filter box, and live updates.
 - In a chat, scroll up to load older messages. Type in the box at the bottom to send:
   Enter sends, Shift+Enter adds a new line.
+- Photos and stickers load as you scroll to them (click a photo to open it full size).
+  Videos, GIFs and voice notes play inline when tapped; documents download.
 - The ⋮ menu has Disconnect and Log out.
 
 - Append `#key=<api key>` to the URL to skip the prompt. Browsers don't send the
@@ -110,6 +113,7 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 | POST | `/sessions/{id}/logout` | Unlinks the device and clears the stored chats |
 | GET | `/sessions/{id}/chats` | `?limit=50&offset=0` (max 200), sorted by most recent activity |
 | GET | `/sessions/{id}/chats/{chatId}/messages` | `?limit=50&before=<unix ts>`, newest first. To page back, pass the oldest `timestamp` you have as `before`. |
+| GET | `/sessions/{id}/chats/{chatId}/messages/{msgId}/media` | The attachment of an image, video, GIF, voice/audio, document or sticker message. `?thumb=1` returns its small embedded JPEG preview. Images, audio and video are served inline; everything else is sent as a download. `410 MEDIA_EXPIRED` means WhatsApp no longer has the file. |
 | POST | `/sessions/{id}/messages/send-text` | `{"chatId", "text", "replyTo"?}`. `replyTo` is the id of a stored message in that chat. |
 
 `chatId` can be a phone number in international format (`6281234567890`,
@@ -152,6 +156,9 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 - `type`: `text`, `image`, `video`, `gif`, `audio`, `voice`, `document`, `sticker`,
   `location`, `contact`, `poll`, `event`, `revoked` or `unknown`.
 - `text`: the text, a media caption, a document's file name, a location's name or a poll's question.
+- `media` (present on image, video, GIF, audio, voice, document and sticker messages):
+  `{mimetype, fileName, size, width, height, seconds, hasThumb}`. Fetch the file from the
+  `/media` route. Messages stored before mywa kept download details have no `media`.
 - `status` of your own messages moves forward through `sent → delivered → read → played`.
   Incoming messages are always `received`.
 
@@ -216,5 +223,5 @@ with an "outdated" error.
 
 ## Not in v1
 
-Media download and media sending, groups management, reactions, webhooks and the
+Media sending, groups management, reactions, webhooks and the
 dashboard. See [PLAN.md](PLAN.md).

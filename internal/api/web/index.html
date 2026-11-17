@@ -108,6 +108,24 @@
   .msg .kind { font-style: italic; color: var(--muted); }
   .msg .meta { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; white-space: nowrap; }
   .msg .tick.read { color: var(--tick-read); }
+  .msg.has-media { padding: 4px 4px 4px; }
+  .msg.has-media .text, .msg.has-media .meta, .msg.has-media .sender { padding: 0 6px; }
+  .media { position: relative; display: block; max-width: 100%; border-radius: 8px; overflow: hidden; background: rgba(127,127,127,.18); margin-bottom: 4px; }
+  .media img, .media video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .media.sticker { background: none; }
+  .media.sticker img { object-fit: contain; }
+  .media .play { position: absolute; inset: 0; display: grid; place-items: center; border: 0; border-radius: 0; background: rgba(0,0,0,.18); color: #fff; padding: 0; }
+  .media .play span { background: rgba(0,0,0,.6); border-radius: 999px; padding: 7px 14px; font-size: 14px; }
+  .media .media-err { position: absolute; inset: auto 0 0 0; background: rgba(0,0,0,.6); color: #fff; }
+  .media-err { font-size: 13px; color: var(--muted); padding: 6px 8px; }
+  .media-err button { color: inherit; text-decoration: underline; padding: 0 0 0 6px; }
+  .audio { margin: 2px 0 4px; }
+  .audio audio { width: 280px; max-width: 100%; display: block; }
+  .audio button, .doc button { padding: 6px 12px; }
+  .doc { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; background: rgba(127,127,127,.12); margin: 2px 0 4px; min-width: 220px; max-width: 320px; }
+  .doc .info { flex: 1; min-width: 0; }
+  .doc .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc .size { font-size: 12px; color: var(--muted); }
 
   .composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--card); }
   .composer textarea { resize: none; max-height: 140px; padding: 9px 12px; line-height: 1.4; }
@@ -431,6 +449,7 @@
   async function openChat(c) {
     if (current && current.id === c.id) { $("draft").focus(); return; }
     const wasOpen = !!current;
+    clearMedia();
     current = c; msgs = []; msgsDone = false; msgsLoading = false;
     const name = displayName(c);
     avatar($("chatAvatar"), name, c.id);
@@ -448,6 +467,7 @@
   }
 
   function closeChat() {
+    clearMedia();
     current = null; msgs = [];
     $("chatPane").hidden = true; $("noChat").hidden = false;
     $("appView").classList.remove("chat-open");
@@ -484,6 +504,195 @@
     return el("span", "tick" + (status === "read" || status === "played" ? " read" : ""), " " + t);
   }
 
+  // ---------- media ----------
+  // Object URLs and built bubbles are kept per open chat so re-renders don't refetch
+  // or restart media; everything is released when the chat changes.
+  const blobs = new Map(), pending = new Map(), nodes = new Map();
+  const queue = []; let active = 0;
+  function limited(fn) {
+    return new Promise((resolve, reject) => { queue.push(() => fn().then(resolve, reject)); pump(); });
+  }
+  function pump() {
+    while (active < 3 && queue.length) {
+      active++;
+      queue.shift()().finally(() => { active--; pump(); });
+    }
+  }
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { io.unobserve(e.target); e.target._load && e.target._load(); }
+  }, { root: $("messages"), rootMargin: "400px 0px" });
+
+  function clearMedia() {
+    io.disconnect();
+    for (const u of blobs.values()) URL.revokeObjectURL(u);
+    blobs.clear(); pending.clear(); nodes.clear(); queue.length = 0;
+  }
+
+  function mediaURL(m, thumb) {
+    const k = m.id + (thumb ? ":thumb" : ":full");
+    if (blobs.has(k)) return Promise.resolve(blobs.get(k));
+    if (pending.has(k)) return pending.get(k);
+    const chat = current;
+    const p = limited(async () => {
+      const res = await api("GET", `/sessions/${S}/chats/${encodeURIComponent(m.chatId)}/messages/${encodeURIComponent(m.id)}/media` + (thumb ? "?thumb=1" : ""));
+      if (!res.ok) {
+        let msg = res.statusText;
+        try { const b = await res.json(); msg = b.code === "MEDIA_EXPIRED" ? "No longer available on WhatsApp" : b.error; } catch {}
+        throw new Error(msg);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      if (current !== chat) { URL.revokeObjectURL(url); throw new Error("stale"); }
+      blobs.set(k, url);
+      return url;
+    }).finally(() => pending.delete(k));
+    pending.set(k, p);
+    return p;
+  }
+
+  function fmtSize(n) {
+    if (!n) return "";
+    const u = ["B", "KB", "MB", "GB"]; let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i ? n.toFixed(1) : n) + " " + u[i];
+  }
+  function fmtDur(s) { return s ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : ""; }
+
+  function boxSize(node, info, maxW, fallback) {
+    const w = info.width, h = info.height;
+    if (w && h) {
+      const width = Math.min(maxW, w, Math.round(maxW * 1.4 * w / h)); // keep tall images from getting huge
+      node.style.width = width + "px";
+      node.style.aspectRatio = `${w} / ${h}`;
+    } else {
+      node.style.width = maxW + "px";
+      node.style.aspectRatio = fallback;
+    }
+  }
+
+  function mediaError(node, err, retry) {
+    if (err.message === "stale" || err.message === "unauthorized") return;
+    const box = el("div", "media-err", "⚠ " + err.message);
+    if (retry) {
+      const b = el("button", "link", "Retry"); b.type = "button";
+      b.onclick = (e) => { e.stopPropagation(); box.remove(); retry(); };
+      box.append(b);
+    }
+    node.append(box);
+  }
+
+  // Images and stickers: show the embedded preview, then the full picture once in view.
+  function imageNode(m) {
+    const sticker = m.type === "sticker";
+    const box = el("a", "media" + (sticker ? " sticker" : ""));
+    box.target = "_blank"; box.rel = "noopener";
+    boxSize(box, m.media, sticker ? 150 : 280, sticker ? "1 / 1" : "4 / 3");
+    const img = el("img"); img.alt = sticker ? "Sticker" : "Photo"; img.decoding = "async";
+    box.append(img);
+    box.onclick = (e) => { if (!box.href) e.preventDefault(); };
+    const loadFull = () => mediaURL(m, false).then((u) => { img.src = u; if (!sticker) box.href = u; })
+      .catch((e) => mediaError(box, e, loadFull));
+    box._load = () => {
+      if (m.media.hasThumb) mediaURL(m, true).then((u) => { if (!img.src) img.src = u; }).catch(() => {});
+      loadFull();
+    };
+    io.observe(box);
+    return box;
+  }
+
+  // Video and GIFs: preview with a play button; the file is fetched when tapped.
+  function videoNode(m) {
+    const gif = m.type === "gif";
+    const box = el("div", "media");
+    boxSize(box, m.media, 280, "16 / 9");
+    const img = el("img"); img.alt = "Video";
+    box.append(img);
+    if (m.media.hasThumb) box._load = () => mediaURL(m, true).then((u) => (img.src = u)).catch(() => {});
+    io.observe(box);
+    const play = el("button", "play"); play.type = "button";
+    const label = el("span", null, (gif ? "GIF" : "▶ " + (fmtDur(m.media.seconds) || "Play")) + (m.media.size ? " · " + fmtSize(m.media.size) : ""));
+    play.append(label);
+    play.onclick = () => {
+      label.textContent = "Loading…"; play.disabled = true;
+      mediaURL(m, false).then((u) => {
+        const v = el("video"); v.src = u; v.playsInline = true; v.autoplay = true;
+        if (gif) { v.muted = true; v.loop = true; } else v.controls = true;
+        box.replaceChildren(v);
+      }).catch((e) => { play.remove(); mediaError(box, e, () => { box.append(play); play.onclick(); }); });
+    };
+    box.append(play);
+    return box;
+  }
+
+  function audioNode(m) {
+    const box = el("div", "audio");
+    const btn = el("button", null, "▶ " + (m.type === "voice" ? "Voice message" : "Audio") + (m.media.seconds ? " · " + fmtDur(m.media.seconds) : ""));
+    btn.type = "button";
+    btn.onclick = () => {
+      btn.textContent = "Loading…"; btn.disabled = true;
+      mediaURL(m, false).then((u) => {
+        const a = el("audio"); a.src = u; a.controls = true; a.autoplay = true;
+        box.replaceChildren(a);
+      }).catch((e) => { btn.remove(); mediaError(box, e, () => { box.replaceChildren(btn); btn.disabled = false; btn.onclick(); }); });
+    };
+    box.append(btn);
+    return box;
+  }
+
+  function docNode(m) {
+    const box = el("div", "doc");
+    const name = m.media.fileName || "Document";
+    const info = el("div", "info");
+    info.append(el("div", "name", "📄 " + name), el("div", "size", [fmtSize(m.media.size), (m.media.mimetype || "").split("/")[1]].filter(Boolean).join(" · ")));
+    const btn = el("button", null, "Download"); btn.type = "button";
+    btn.onclick = () => {
+      btn.textContent = "…"; btn.disabled = true;
+      mediaURL(m, false).then((u) => {
+        const a = document.createElement("a"); a.href = u; a.download = name; a.rel = "noopener";
+        document.body.append(a); a.click(); a.remove();
+        btn.textContent = "Download"; btn.disabled = false;
+      }).catch((e) => { btn.textContent = "Download"; btn.disabled = false; mediaError(box, e); });
+    };
+    box.append(info, btn);
+    return box;
+  }
+
+  function mediaNode(m) {
+    if (!m.media || m.type === "revoked") return null;
+    switch (m.type) {
+      case "image": case "sticker": return imageNode(m);
+      case "video": case "gif": return videoNode(m);
+      case "audio": case "voice": return audioNode(m);
+      case "document": return docNode(m);
+    }
+    return null;
+  }
+
+  // ---------- message bubbles ----------
+  function metaNode(m) {
+    const d = new Date(m.timestamp * 1000);
+    const meta = el("div", "meta", (m.edited ? "edited · " : "") + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+    if (m.fromMe) { const t = tick(m.status); if (t) meta.append(t); }
+    return meta;
+  }
+
+  function msgNode(m) {
+    if (nodes.has(m.id)) return nodes.get(m.id);
+    const b = el("div", "msg" + (m.fromMe ? " me" : "") + (m.media && ["image", "video", "gif", "sticker"].includes(m.type) ? " has-media" : ""));
+    if (current && current.isGroup && !m.fromMe) {
+      const who = el("div", "sender", m.senderName || "+" + (m.senderId || "").split("@")[0]);
+      who.style.color = hashColor(m.senderId || "");
+      b.append(who);
+    }
+    const media = mediaNode(m);
+    if (media) b.append(media);
+    else if (m.type !== "text") b.append(el("div", "kind", KIND[m.type] || m.type));
+    const showText = m.text && m.type !== "revoked" && !(m.type === "document" && m.media && m.text === m.media.fileName);
+    if (showText) b.append(el("div", "text", m.text));
+    b.append(metaNode(m));
+    nodes.set(m.id, b);
+    return b;
+  }
+
   function renderMessages() {
     const box = $("messages");
     box.replaceChildren();
@@ -497,37 +706,48 @@
     for (const m of msgs) {
       const d = new Date(m.timestamp * 1000);
       if (!lastDay || !sameDay(d, lastDay)) { box.append(el("div", "day", dayLabel(d))); lastDay = d; }
-      const b = el("div", "msg" + (m.fromMe ? " me" : ""));
-      if (current && current.isGroup && !m.fromMe) {
-        const who = el("div", "sender", m.senderName || "+" + (m.senderId || "").split("@")[0]);
-        who.style.color = hashColor(m.senderId || "");
-        b.append(who);
-      }
-      if (m.type !== "text") b.append(el("div", "kind", KIND[m.type] || m.type));
-      if (m.text && m.type !== "revoked") b.append(el("div", "text", m.text));
-      const meta = el("div", "meta", (m.edited ? "edited · " : "") + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-      if (m.fromMe) { const t = tick(m.status); if (t) meta.append(t); }
-      b.append(meta);
-      box.append(b);
+      box.append(msgNode(m));
     }
   }
 
   function nearBottom() { const b = $("messages"); return b.scrollHeight - b.scrollTop - b.clientHeight < 120; }
 
+  // New messages are appended in place so media already playing keeps playing.
   function addMessage(m, forceScroll) {
     refreshChatsSoon();
     if (!current || m.chatId !== current.id || msgs.some((x) => x.id === m.id)) return;
     const stick = forceScroll || nearBottom();
+    const box = $("messages");
+    const prev = msgs[msgs.length - 1];
     msgs.push(m);
-    renderMessages();
-    if (stick) $("messages").scrollTop = $("messages").scrollHeight;
+    box.querySelectorAll(":scope > .empty").forEach((e) => e.remove());
+    const d = new Date(m.timestamp * 1000);
+    if (!prev || !sameDay(d, new Date(prev.timestamp * 1000))) box.append(el("div", "day", dayLabel(d)));
+    box.append(msgNode(m));
+    if (stick) box.scrollTop = box.scrollHeight;
   }
 
+  // Rebuild only the bubbles whose content changed.
   function patchMessages(chatId, fn) {
     if (!current || chatId !== current.id) return;
-    let changed = false;
-    for (const m of msgs) if (fn(m)) changed = true;
-    if (changed) { const top = $("messages").scrollTop; renderMessages(); $("messages").scrollTop = top; }
+    for (const m of msgs) {
+      if (!fn(m)) continue;
+      const old = nodes.get(m.id);
+      nodes.delete(m.id);
+      if (old && old.isConnected) old.replaceWith(msgNode(m));
+    }
+  }
+
+  // Receipts only change the ticks.
+  function patchStatus(chatId, ids, status) {
+    if (!current || chatId !== current.id) return;
+    for (const m of msgs) {
+      if (!ids.has(m.id) || m.status === status) continue;
+      m.status = status;
+      const node = nodes.get(m.id);
+      const meta = node && node.querySelector(":scope > .meta");
+      if (meta) meta.replaceWith(metaNode(m));
+    }
   }
 
   // ---------- sending ----------
@@ -571,11 +791,7 @@
         case "session.status": render(d); break;
         case "session.qr": refreshQR(); break;
         case "message.received": case "message.sent": addMessage(d, false); break;
-        case "message.ack": {
-          const ids = new Set(d.ids);
-          patchMessages(d.chatId, (m) => ids.has(m.id) && m.status !== d.status && (m.status = d.status, true));
-          break;
-        }
+        case "message.ack": patchStatus(d.chatId, new Set(d.ids), d.status); break;
         case "message.edited":
           patchMessages(d.chatId, (m) => m.id === d.id && (m.text = d.text, m.edited = true, true));
           refreshChatsSoon(); break;

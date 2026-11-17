@@ -1,7 +1,9 @@
 package api
 
 import (
+	"mime"
 	"net/http"
+	"strconv"
 
 	"github.com/rockcacing/mywa/internal/wa"
 )
@@ -69,4 +71,33 @@ func (s *Server) sendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, msg)
+}
+
+// media returns a message's attachment; ?thumb=1 returns its small embedded preview.
+// Only images, audio and video are served for inline display. Anything else (documents,
+// SVG, HTML…) is sent as an attachment, and the sandbox CSP stops a file opened
+// directly from running script on this origin.
+func (s *Server) media(w http.ResponseWriter, r *http.Request) {
+	thumb := r.URL.Query().Get("thumb") == "1"
+	m, err := s.mgr.Media(r.Context(), r.PathValue("id"), r.PathValue("chatId"), r.PathValue("msgId"), thumb)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	h := w.Header()
+	h.Set("Cache-Control", "private, max-age=86400")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	ctype := m.Mimetype
+	if !wa.SafeInlineType(ctype) {
+		ctype = "application/octet-stream"
+		name := m.FileName
+		if name == "" {
+			name = "file"
+		}
+		h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	}
+	h.Set("Content-Type", ctype)
+	h.Set("Content-Length", strconv.Itoa(len(m.Data)))
+	_, _ = w.Write(m.Data)
 }

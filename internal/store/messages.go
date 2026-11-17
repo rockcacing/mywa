@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -32,6 +33,31 @@ type Message struct {
 	Status     string `json:"status"`
 	QuotedID   string `json:"quotedId,omitempty"`
 	Edited     bool   `json:"edited,omitempty"`
+	// Media describes a downloadable attachment. It is nil for text messages and for
+	// media messages stored before mywa kept download details.
+	Media *MediaInfo `json:"media,omitempty"`
+	// MediaBlob is the opaque download descriptor (a serialized WhatsApp message) the wa
+	// package needs to fetch the file. It is written on save and never sent to clients.
+	MediaBlob []byte `json:"-"`
+}
+
+// MediaInfo is what clients need to lay out an attachment before downloading it.
+type MediaInfo struct {
+	Mimetype string `json:"mimetype,omitempty"`
+	FileName string `json:"fileName,omitempty"`
+	Size     uint64 `json:"size,omitempty"`
+	Width    uint32 `json:"width,omitempty"`
+	Height   uint32 `json:"height,omitempty"`
+	Seconds  uint32 `json:"seconds,omitempty"`
+	HasThumb bool   `json:"hasThumb,omitempty"`
+}
+
+func mediaInfoJSON(m *MediaInfo) string {
+	if m == nil {
+		return ""
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
 }
 
 // SaveMessage inserts m and moves the chat's "last message" forward if m is newer.
@@ -45,15 +71,25 @@ func (s *Store) SaveMessage(ctx context.Context, sessionID string, m Message, co
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (session_id, chat_jid, id, sender_jid, sender_name, from_me, ts, type, text, status, quoted_id, edited)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO messages (session_id, chat_jid, id, sender_jid, sender_name, from_me, ts, type, text, status, quoted_id, edited, media, media_info)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(session_id, chat_jid, id) DO NOTHING`,
 		sessionID, m.ChatID, m.ID, m.SenderID, m.SenderName, b2i(m.FromMe), m.Timestamp,
-		m.Type, m.Text, m.Status, m.QuotedID, b2i(m.Edited))
+		m.Type, m.Text, m.Status, m.QuotedID, b2i(m.Edited), m.MediaBlob, mediaInfoJSON(m.Media))
 	if err != nil {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
+		// Already stored. A later copy (e.g. from a history sync) may carry download
+		// details the first one lacked; keep them without touching anything else.
+		if len(m.MediaBlob) > 0 {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE messages SET media = ?, media_info = ?
+				WHERE session_id = ? AND chat_jid = ? AND id = ? AND media IS NULL`,
+				m.MediaBlob, mediaInfoJSON(m.Media), sessionID, m.ChatID, m.ID); err != nil {
+				return false, err
+			}
+		}
 		return false, tx.Commit()
 	}
 
@@ -150,7 +186,7 @@ func (s *Store) rewrite(ctx context.Context, sessionID, chatJID, id, text, newTy
 // ListMessages returns up to limit messages of a chat older than before (unix seconds;
 // 0 means no bound), newest first.
 func (s *Store) ListMessages(ctx context.Context, sessionID, chatJID string, before int64, limit int) ([]Message, error) {
-	q := `SELECT id, chat_jid, sender_jid, sender_name, from_me, ts, type, text, status, quoted_id, edited
+	q := `SELECT ` + messageCols + `
 	      FROM messages WHERE session_id = ? AND chat_jid = ?`
 	args := []any{sessionID, chatJID}
 	if before > 0 {
@@ -177,7 +213,7 @@ func (s *Store) ListMessages(ctx context.Context, sessionID, chatJID string, bef
 
 func (s *Store) GetMessage(ctx context.Context, sessionID, chatJID, id string) (Message, error) {
 	row := s.DB.QueryRowContext(ctx, `
-		SELECT id, chat_jid, sender_jid, sender_name, from_me, ts, type, text, status, quoted_id, edited
+		SELECT `+messageCols+`
 		FROM messages WHERE session_id = ? AND chat_jid = ? AND id = ?`, sessionID, chatJID, id)
 	m, err := scanMessage(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -186,13 +222,35 @@ func (s *Store) GetMessage(ctx context.Context, sessionID, chatJID, id string) (
 	return m, err
 }
 
+// GetMediaBlob returns the stored download descriptor of a message, or ErrNotFound when
+// the message does not exist or has none.
+func (s *Store) GetMediaBlob(ctx context.Context, sessionID, chatJID, id string) ([]byte, error) {
+	var blob []byte
+	err := s.DB.QueryRowContext(ctx,
+		`SELECT media FROM messages WHERE session_id = ? AND chat_jid = ? AND id = ?`,
+		sessionID, chatJID, id).Scan(&blob)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && len(blob) == 0) {
+		return nil, ErrNotFound
+	}
+	return blob, err
+}
+
+const messageCols = `id, chat_jid, sender_jid, sender_name, from_me, ts, type, text, status, quoted_id, edited, media_info`
+
 type scanner interface{ Scan(...any) error }
 
 func scanMessage(r scanner) (Message, error) {
 	var m Message
 	var fromMe, edited int
+	var info string
 	err := r.Scan(&m.ID, &m.ChatID, &m.SenderID, &m.SenderName, &fromMe, &m.Timestamp,
-		&m.Type, &m.Text, &m.Status, &m.QuotedID, &edited)
+		&m.Type, &m.Text, &m.Status, &m.QuotedID, &edited, &info)
 	m.FromMe, m.Edited = fromMe == 1, edited == 1
+	if info != "" {
+		var mi MediaInfo
+		if json.Unmarshal([]byte(info), &mi) == nil {
+			m.Media = &mi
+		}
+	}
 	return m, err
 }
