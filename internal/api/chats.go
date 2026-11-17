@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"mime"
 	"net/http"
 	"strconv"
@@ -27,7 +28,16 @@ func (s *Server) listChats(w http.ResponseWriter, r *http.Request) {
 	if limit == 0 {
 		limit = defaultLimit
 	}
-	chats, err := s.mgr.ListChats(r.Context(), r.PathValue("id"), int(limit), int(offset))
+	archived := false
+	switch r.URL.Query().Get("archived") {
+	case "", "false", "0":
+	case "true", "1":
+		archived = true
+	default:
+		s.fail(w, r, fmt.Errorf("%w: archived must be true or false", wa.ErrInvalid))
+		return
+	}
+	chats, err := s.mgr.ListChats(r.Context(), r.PathValue("id"), archived, int(limit), int(offset))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -110,4 +120,14 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, msg)
+}
+
+// chatSummary returns counts for the "Archived" entry of a chat list.
+func (s *Server) chatSummary(w http.ResponseWriter, r *http.Request) {
+	sum, err := s.mgr.ChatSummary(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
 }

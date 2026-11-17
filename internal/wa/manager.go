@@ -241,11 +241,20 @@ func (m *Manager) SendText(ctx context.Context, id string, req SendTextRequest) 
 	return s.SendText(ctx, req)
 }
 
-func (m *Manager) ListChats(ctx context.Context, id string, limit, offset int) ([]mystore.Chat, error) {
+// ListChats returns the session's archived or non-archived chats, pinned chats first.
+func (m *Manager) ListChats(ctx context.Context, id string, archived bool, limit, offset int) ([]mystore.Chat, error) {
 	if _, err := m.get(id); err != nil {
 		return nil, err
 	}
-	return m.db.ListChats(ctx, id, limit, offset)
+	return m.db.ListChats(ctx, id, archived, limit, offset)
+}
+
+// ChatSummary counts the session's archived chats.
+func (m *Manager) ChatSummary(ctx context.Context, id string) (mystore.ChatSummary, error) {
+	if _, err := m.get(id); err != nil {
+		return mystore.ChatSummary{}, err
+	}
+	return m.db.Summary(ctx, id)
 }
 
 func (m *Manager) ListMessages(ctx context.Context, id, chatID string, before int64, limit int) ([]mystore.Message, error) {

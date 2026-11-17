@@ -85,6 +85,11 @@
   .chat { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 16px; border: 0; border-radius: 0; background: none; text-align: left; font-weight: 400; border-bottom: 1px solid var(--line); }
   .chat:hover { background: var(--hover); }
   .chat.active { background: var(--active); }
+  .chat .pin { flex: none; font-size: 13px; opacity: .75; }
+  .chat.archived-entry .avatar { background: var(--hover); color: var(--accent); font-size: 18px; }
+  .chat.archived-entry .count { color: var(--accent); font-weight: 600; font-size: 13px; flex: none; }
+  .listbar { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--card); }
+  .listbar strong { font-size: 16px; }
   .avatar { width: 42px; height: 42px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 16px; }
   .chat .body { flex: 1; min-width: 0; }
   .chat .top, .chat .bottom { display: flex; gap: 8px; align-items: baseline; }
@@ -206,6 +211,10 @@
       </div>
     </header>
     <div class="banner" id="banner" hidden></div>
+    <div class="listbar" id="archBar" hidden>
+      <button class="link" id="archBack" type="button" aria-label="Back to chats">←</button>
+      <strong>Archived</strong>
+    </div>
     <div class="search"><input id="filter" type="search" placeholder="Filter loaded chats" autocomplete="off"></div>
     <div class="list" id="list"></div>
   </aside>
@@ -264,6 +273,7 @@
 
   let ws = null, pollTimer = null, qrURL = null, lastStatus = "", info = null;
   let chats = [], chatsDone = false, chatsLoading = false, refreshTimer = null;
+  let archivedMode = false, summary = { archived: 0, archivedUnread: 0 }, listGen = 0;
   let current = null, msgs = [], msgsDone = false, msgsLoading = false, sending = false;
 
   // ---------- helpers ----------
@@ -365,7 +375,7 @@
       $("acctLine").textContent = st === "ready" ? phone : "Reconnecting…";
       $("appDot").className = "dot " + cls;
       $("sendBtn").disabled = st !== "ready" || sending;
-      if (lastStatus !== "ready" && st === "ready" && chats.length === 0) loadChats(true);
+      if (lastStatus !== "ready" && st === "ready" && chats.length === 0) { loadChats(true); loadSummary(); }
       lastStatus = st;
       return;
     }
@@ -408,17 +418,40 @@
 
   // ---------- chat list ----------
   async function loadChats(reset) {
-    if (chatsLoading) return;
+    if (chatsLoading && !reset) return;
     chatsLoading = true;
+    const gen = ++listGen; // a mode switch while loading discards the older answer
     try {
       const offset = reset ? 0 : chats.length;
-      const page = await getJSON(`/sessions/${S}/chats?limit=${PAGE}&offset=${offset}`);
+      const page = await getJSON(`/sessions/${S}/chats?archived=${archivedMode}&limit=${PAGE}&offset=${offset}`);
+      if (gen !== listGen) return;
       chats = reset ? page : chats.concat(page);
       chatsDone = page.length < PAGE;
       renderChats();
     } catch (e) {
       if (e.message !== "unauthorized") banner("Could not load chats: " + e.message);
-    } finally { chatsLoading = false; }
+    } finally { if (gen === listGen) chatsLoading = false; }
+  }
+
+  async function loadSummary() {
+    try {
+      summary = await getJSON(`/sessions/${S}/chats/summary`);
+      if (!archivedMode) renderChats();
+    } catch {}
+  }
+
+  // Switch between the main list and the archived chats.
+  function setArchivedMode(on) {
+    if (archivedMode === on) return;
+    archivedMode = on;
+    $("archBar").hidden = !on;
+    $("filter").value = "";
+    $("filter").placeholder = on ? "Filter archived chats" : "Filter loaded chats";
+    chats = []; chatsDone = false;
+    $("list").replaceChildren(el("div", "empty", "Loading…"));
+    $("list").scrollTop = 0;
+    loadChats(true);
+    if (!on) loadSummary();
   }
 
   // Re-read the chats already on screen (newest activity first) after live events.
@@ -428,10 +461,13 @@
       if (!info || info.status !== "ready") return;
       try {
         const n = Math.min(200, Math.max(PAGE, chats.length));
-        const page = await getJSON(`/sessions/${S}/chats?limit=${n}&offset=0`);
+        const mode = archivedMode, gen = listGen;
+        const page = await getJSON(`/sessions/${S}/chats?archived=${mode}&limit=${n}&offset=0`);
+        if (mode !== archivedMode || gen !== listGen) return;
         const rest = chats.slice(n).filter((c) => !page.some((p) => p.id === c.id));
         chats = page.concat(rest);
         renderChats();
+        loadSummary();
       } catch {}
     }, 600);
   }
@@ -441,9 +477,24 @@
     const top = list.scrollTop;
     const q = $("filter").value.trim().toLowerCase();
     list.replaceChildren();
+    // WhatsApp-style "Archived" entry at the top of the main list.
+    if (!archivedMode && !q && summary.archived > 0) {
+      const row = el("button", "chat archived-entry"); row.type = "button";
+      const av = el("div", "avatar", "🗄");
+      const body = el("div", "body");
+      const t = el("div", "top");
+      t.append(el("span", "name", "Archived"));
+      if (summary.archivedUnread) t.append(el("span", "count", String(summary.archivedUnread)));
+      const b = el("div", "bottom");
+      b.append(el("span", "preview", summary.archived + (summary.archived === 1 ? " chat" : " chats")));
+      body.append(t, b);
+      row.append(av, body);
+      row.onclick = () => setArchivedMode(true);
+      list.append(row);
+    }
     const shown = q ? chats.filter((c) => displayName(c).toLowerCase().includes(q) || c.id.includes(q)) : chats;
-    if (shown.length === 0) {
-      list.append(el("div", "empty", q ? "No loaded chat matches." :
+    if (shown.length === 0 && !chatsLoading) {
+      list.append(el("div", "empty", q ? "No loaded chat matches." : archivedMode ? "No archived chats." :
         "No chats yet. Your phone sends recent chats a minute or so after linking."));
     }
     for (const c of shown) {
@@ -460,6 +511,7 @@
       let pv = lm ? previewText(lm.type, lm.text) : "";
       if (lm && lm.fromMe) pv = "You: " + pv;
       bottom.append(el("span", "preview", pv || " "));
+      if (c.pinned) { const pin = el("span", "pin", "📌"); pin.title = "Pinned"; bottom.append(pin); }
       if (c.unread) bottom.append(el("span", "badge", c.unread > 99 ? "99+" : String(c.unread)));
       body.append(t, bottom);
       row.append(av, body);
@@ -957,6 +1009,7 @@
         case "message.revoked":
           patchMessages(d.chatId, (m) => m.id === d.id && (m.type = "revoked", m.text = "", true));
           refreshChatsSoon(); break;
+        case "chat.updated": case "chats.synced": refreshChatsSoon(); break;
       }
     };
     ws.onclose = () => {
@@ -1007,6 +1060,7 @@
   $("backBtn").onclick = () => history.back();
   window.addEventListener("popstate", () => { if (current) closeChat(); });
   $("filter").oninput = renderChats;
+  $("archBack").onclick = () => setArchivedMode(false);
   $("messages").addEventListener("scroll", () => { if ($("messages").scrollTop < 40) loadOlder(false); });
   $("composer").onsubmit = (e) => { e.preventDefault(); send(); };
   $("draft").addEventListener("input", autoGrow);

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	jid        TEXT NOT NULL DEFAULT '',
 	push_name  TEXT NOT NULL DEFAULT '',
 	status     TEXT NOT NULL DEFAULT 'created',
+	unarchive_chats INTEGER NOT NULL DEFAULT 1,
 	created_at INTEGER NOT NULL
 );
 
@@ -36,6 +37,9 @@ CREATE TABLE IF NOT EXISTS chats (
 	last_msg_from_me INTEGER NOT NULL DEFAULT 0,
 	last_msg_at      INTEGER NOT NULL DEFAULT 0,
 	unread           INTEGER NOT NULL DEFAULT 0,
+	archived         INTEGER NOT NULL DEFAULT 0,
+	pinned_at        INTEGER NOT NULL DEFAULT 0,
+	archive_ts       INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (session_id, jid)
 );
 CREATE INDEX IF NOT EXISTS chats_recent ON chats(session_id, last_msg_at DESC);
@@ -89,6 +93,10 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	for _, c := range []struct{ table, col, decl string }{
 		{"messages", "media", "BLOB"},
 		{"messages", "media_info", "TEXT NOT NULL DEFAULT ''"},
+		{"chats", "archived", "INTEGER NOT NULL DEFAULT 0"},
+		{"chats", "pinned_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"chats", "archive_ts", "INTEGER NOT NULL DEFAULT 0"},
+		{"sessions", "unarchive_chats", "INTEGER NOT NULL DEFAULT 1"},
 	} {
 		if err := addColumn(ctx, db, c.table, c.col, c.decl); err != nil {
 			db.Close()

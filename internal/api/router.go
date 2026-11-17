@@ -23,7 +23,8 @@ type Manager interface {
 	Logout(ctx context.Context, id string) (wa.Info, error)
 	Delete(ctx context.Context, id string) error
 	SendText(ctx context.Context, id string, req wa.SendTextRequest) (store.Message, error)
-	ListChats(ctx context.Context, id string, limit, offset int) ([]store.Chat, error)
+	ListChats(ctx context.Context, id string, archived bool, limit, offset int) ([]store.Chat, error)
+	ChatSummary(ctx context.Context, id string) (store.ChatSummary, error)
 	ListMessages(ctx context.Context, id, chatID string, before int64, limit int) ([]store.Message, error)
 	Media(ctx context.Context, id, chatID, msgID string, thumb bool) (wa.Media, error)
 	Revoke(ctx context.Context, id, chatID, msgID string) (store.Message, error)
@@ -58,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/logout", s.logout)
 
 	mux.HandleFunc("GET /sessions/{id}/chats", s.listChats)
+	mux.HandleFunc("GET /sessions/{id}/chats/summary", s.chatSummary)
 	mux.HandleFunc("GET /sessions/{id}/chats/{chatId}/messages", s.listMessages)
 	mux.HandleFunc("GET /sessions/{id}/chats/{chatId}/messages/{msgId}/media", s.media)
 	mux.HandleFunc("DELETE /sessions/{id}/chats/{chatId}/messages/{msgId}", s.revoke)

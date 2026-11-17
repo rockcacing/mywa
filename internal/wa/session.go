@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -55,6 +56,8 @@ type Session struct {
 
 	historyMu    sync.Mutex // serialises history-sync batches
 	groupLookups sync.Map   // chat JID → struct{}: group-name lookups already started
+
+	chatStateSeeded atomic.Bool // archived/pinned app state fetched since this process started
 }
 
 func newSession(m *Manager, r mystore.SessionRow) *Session {
@@ -177,6 +180,9 @@ func (s *Session) Connect(ctx context.Context) (Info, error) {
 	}
 	cli := whatsmeow.NewClient(device, newWALogger(s.log.With("component", "whatsmeow")))
 	cli.EnableAutoReconnect = true
+	// Archived/pinned chats arrive as app-state events; without this, whatsmeow drops
+	// them during a full sync (at link time and in seedChatState).
+	cli.EmitAppStateEventsOnFullSync = true
 	cli.AddEventHandler(func(evt any) { s.handleEvent(cli, evt) })
 	if device.ID == nil {
 		qrCtx, cancel := context.WithCancel(context.Background())

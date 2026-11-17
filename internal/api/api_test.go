@@ -90,8 +90,14 @@ func (f *fakeManager) SendText(_ context.Context, id string, req wa.SendTextRequ
 	f.sent = append(f.sent, req)
 	return store.Message{ID: "MSG1", ChatID: req.ChatID, FromMe: true, Type: "text", Text: req.Text, Status: "sent"}, nil
 }
-func (f *fakeManager) ListChats(_ context.Context, id string, limit, offset int) ([]store.Chat, error) {
+func (f *fakeManager) ListChats(_ context.Context, id string, archived bool, limit, offset int) ([]store.Chat, error) {
+	if archived {
+		return []store.Chat{{ID: "2@s.whatsapp.net", Name: "Bob", Archived: true}}, nil
+	}
 	return []store.Chat{{ID: "1@s.whatsapp.net", Name: "Alice"}}, nil
+}
+func (f *fakeManager) ChatSummary(_ context.Context, id string) (store.ChatSummary, error) {
+	return store.ChatSummary{Archived: 1}, nil
 }
 func (f *fakeManager) ListMessages(_ context.Context, id, chatID string, before int64, limit int) ([]store.Message, error) {
 	return []store.Message{{ID: "x", ChatID: chatID, Timestamp: before, Type: "text", Text: strings.Repeat("a", limit)}}, nil
@@ -265,6 +271,15 @@ func TestChatsAndMessagesParams(t *testing.T) {
 	f.sessions["main"] = wa.Info{ID: "main"}
 	if resp, body := do(t, ts, "GET", "/sessions/main/chats", "", true); resp.StatusCode != 200 || !strings.Contains(string(body), "Alice") {
 		t.Fatalf("chats: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := do(t, ts, "GET", "/sessions/main/chats?archived=true", "", true); resp.StatusCode != 200 || !strings.Contains(string(body), "Bob") {
+		t.Fatalf("archived chats: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := do(t, ts, "GET", "/sessions/main/chats?archived=maybe", "", true); resp.StatusCode != 400 {
+		t.Fatalf("bad archived param: %d", resp.StatusCode)
+	}
+	if resp, body := do(t, ts, "GET", "/sessions/main/chats/summary", "", true); resp.StatusCode != 200 || !strings.Contains(string(body), `"archived":1`) {
+		t.Fatalf("summary: %d %s", resp.StatusCode, body)
 	}
 	if resp, _ := do(t, ts, "GET", "/sessions/main/chats?limit=-1", "", true); resp.StatusCode != 400 {
 		t.Fatalf("negative limit: %d", resp.StatusCode)

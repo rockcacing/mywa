@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -34,6 +35,7 @@ func (s *Session) handleEvent(cli *whatsmeow.Client, evt any) {
 			s.setAccount(cli.Store.ID.String(), cli.Store.PushName)
 		}
 		s.setStatus(StatusReady, "")
+		s.seedChatState(cli)
 
 	case *events.PushNameSetting:
 		if cli.Store.ID != nil {
@@ -81,9 +83,80 @@ func (s *Session) handleEvent(cli *whatsmeow.Client, evt any) {
 			}
 		}
 
+	case *events.Archive:
+		chat := s.canonicalChat(ctx, e.JID, types.EmptyJID)
+		if !supportedChat(chat) {
+			return
+		}
+		archived := e.Action.GetArchived()
+		r := e.Action.GetMessageRange()
+		lastTS := max(r.GetLastMessageTimestamp(), r.GetLastSystemMessageTimestamp())
+		if lastTS > 1e11 { // milliseconds
+			lastTS /= 1000
+		}
+		if lastTS <= 0 {
+			lastTS = e.Timestamp.Unix()
+		}
+		if err := s.m.db.SetArchived(ctx, s.id, chat.String(), archived, lastTS); err != nil {
+			s.log.Error("store archive", "err", err)
+		}
+		if !e.FromFullSync { // a full sync announces itself once, as chats.synced
+			s.m.hub.Publish(s.id, hub.ChatUpdated, map[string]any{"chatId": chat.String(), "archived": archived})
+		}
+
+	case *events.UnarchiveChatsSetting:
+		unarchive := e.Action.GetUnarchiveChats()
+		s.log.Info("keep-chats-archived setting", "unarchiveOnNewMessage", unarchive)
+		if err := s.m.db.SetUnarchiveChats(ctx, s.id, unarchive); err != nil {
+			s.log.Error("store unarchive setting", "err", err)
+		}
+		if !e.FromFullSync {
+			s.m.hub.Publish(s.id, hub.ChatsSynced, nil)
+		}
+
+	case *events.Pin:
+		chat := s.canonicalChat(ctx, e.JID, types.EmptyJID)
+		if !supportedChat(chat) {
+			return
+		}
+		var pinnedAt int64
+		if e.Action.GetPinned() {
+			pinnedAt = e.Timestamp.Unix()
+			if pinnedAt <= 0 {
+				pinnedAt = nowUnix()
+			}
+		}
+		if err := s.m.db.SetPinned(ctx, s.id, chat.String(), pinnedAt); err != nil {
+			s.log.Error("store pin", "err", err)
+		}
+		if !e.FromFullSync {
+			s.m.hub.Publish(s.id, hub.ChatUpdated, map[string]any{"chatId": chat.String(), "pinned": pinnedAt > 0})
+		}
+
 	case *events.HistorySync:
 		go s.onHistorySync(cli, e)
 	}
+}
+
+// seedChatState asks WhatsApp once per process for the full set of chat settings that
+// mywa reads from app state (archived and pinned chats live in "regular_low"). The
+// phone sends them at link time too, but sessions linked before mywa stored them, or
+// whose updates were missed while offline, would otherwise never learn them.
+func (s *Session) seedChatState(cli *whatsmeow.Client) {
+	if !s.chatStateSeeded.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := cli.FetchAppState(ctx, appstate.WAPatchRegularLow, true, false); err != nil {
+			s.log.Warn("sync archived/pinned chats", "err", err)
+			s.chatStateSeeded.Store(false) // try again on the next connect
+			return
+		}
+		s.log.Info("synced archived and pinned chats")
+		s.m.hub.Publish(s.id, hub.ChatsSynced, nil)
+	}()
 }
 
 // supportedChat filters out status updates, broadcast lists and newsletters.
@@ -247,6 +320,13 @@ func (s *Session) onHistorySync(cli *whatsmeow.Client, e *events.HistorySync) {
 		if err := s.m.db.UpsertChat(ctx, s.id, chat.String(), name, &unread); err != nil {
 			s.log.Error("history chat", "err", err)
 			continue
+		}
+		// App state (events.Archive/Pin) is authoritative; history only adds what it knows.
+		if conv.GetArchived() {
+			_ = s.m.db.SetArchived(ctx, s.id, chat.String(), true, int64(conv.GetConversationTimestamp()))
+		}
+		if p := conv.GetPinned(); p > 0 {
+			_ = s.m.db.SetPinned(ctx, s.id, chat.String(), int64(p))
 		}
 		for _, hm := range conv.GetMessages() {
 			evt, err := cli.ParseWebMessage(raw, hm.GetMessage())

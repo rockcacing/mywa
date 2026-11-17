@@ -49,6 +49,8 @@ WhatsApp rotates it. Once you scan it, the page switches to your chats:
 - **Wide screens (900 px and up):** chat list on the left, the open chat on the right.
 - **Phones:** the chat list, and tapping a chat opens it full screen (← or Back returns).
 - The list is newest activity first, with unread counts, a filter box, and live updates.
+  Pinned chats (📌) stay on top. An **Archived** entry at the top opens your archived
+  chats; ← returns to the main list.
 - In a chat, scroll up to load older messages. Type in the box at the bottom to send:
   Enter sends, Shift+Enter adds a new line.
 - Photos and stickers load as you scroll to them (click a photo to open it full size).
@@ -113,7 +115,8 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 | POST | `/sessions/{id}/pairing-code` | `{"phone": "62812..."}` → `{"code": "ABCD-EFGH"}`. Only works in `qr_ready`. |
 | POST | `/sessions/{id}/disconnect` | Closes the connection and keeps the credentials |
 | POST | `/sessions/{id}/logout` | Unlinks the device and clears the stored chats |
-| GET | `/sessions/{id}/chats` | `?limit=50&offset=0` (max 200), sorted by most recent activity |
+| GET | `/sessions/{id}/chats` | `?archived=false` (default) or `true`, `&limit=50&offset=0` (max 200). Pinned chats first, then most recent activity. Only chats with at least one stored message. |
+| GET | `/sessions/{id}/chats/summary` | `{archived, archivedUnread}`: archived chat count and how many have unread messages |
 | GET | `/sessions/{id}/chats/{chatId}/messages` | `?limit=50&before=<unix ts>`, newest first. To page back, pass the oldest `timestamp` you have as `before`. |
 | GET | `/sessions/{id}/chats/{chatId}/messages/{msgId}/media` | The attachment of an image, video, GIF, voice/audio, document or sticker message. `?thumb=1` returns its small embedded JPEG preview. Images, audio and video are served inline; everything else is sent as a download. `410 MEDIA_EXPIRED` means WhatsApp no longer has the file. |
 | DELETE | `/sessions/{id}/chats/{chatId}/messages/{msgId}` | Deletes one of your own messages for everyone (within 60 hours of sending, as in WhatsApp). Emits `message.revoked`. |
@@ -162,6 +165,8 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 - `media` (present on image, video, GIF, audio, voice, document and sticker messages):
   `{mimetype, fileName, size, width, height, seconds, hasThumb}`. Fetch the file from the
   `/media` route. Messages stored before mywa kept download details have no `media`.
+- Chats carry `archived` and `pinned`. As in WhatsApp, with "Keep chats archived" off
+  on your phone, a new message moves an archived chat back to the main list.
 - `status` of your own messages moves forward through `sent → delivered → read → played`.
   Incoming messages are always `received`.
 
@@ -188,6 +193,8 @@ Every frame is `{"event", "session", "timestamp", "data"}`:
 | `message.ack` | `{chatId, ids, status, timestamp}` |
 | `message.edited` | `{chatId, id, text}` |
 | `message.revoked` | `{chatId, id}` |
+| `chat.updated` | `{chatId, archived}` or `{chatId, pinned}` after you (un)archive or (un)pin on the phone |
+| `chats.synced` | `null`: archived/pinned state was refreshed; re-read the chat lists |
 
 A client that falls 256 events behind is disconnected with close code 1008;
 reconnect and read the REST API to catch up.

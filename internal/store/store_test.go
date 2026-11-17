@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,7 +66,7 @@ func TestSaveMessageUpdatesChat(t *testing.T) {
 		t.Fatal("duplicate message reported as inserted")
 	}
 
-	chats, err := s.ListChats(ctx, "s1", 10, 0)
+	chats, err := s.ListChats(ctx, "s1", false, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +96,7 @@ func TestSaveMessageUpdatesChat(t *testing.T) {
 	if err := s.ResetUnread(ctx, "s1", chat); err != nil {
 		t.Fatal(err)
 	}
-	chats, _ = s.ListChats(ctx, "s1", 10, 0)
+	chats, _ = s.ListChats(ctx, "s1", false, 10, 0)
 	if chats[0].Unread != 0 {
 		t.Fatal("unread not reset")
 	}
@@ -138,7 +139,7 @@ func TestEditAndRevoke(t *testing.T) {
 	if m.Text != "hello" || !m.Edited || m.Type != "text" {
 		t.Fatalf("after edit: %+v", m)
 	}
-	chats, _ := s.ListChats(ctx, "s1", 10, 0)
+	chats, _ := s.ListChats(ctx, "s1", false, 10, 0)
 	if chats[0].LastMessage.Text != "hello" || !chats[0].IsGroup {
 		t.Fatalf("chat after edit: %+v", chats[0])
 	}
@@ -169,8 +170,12 @@ func TestUpsertChatAndPurge(t *testing.T) {
 	if got := s.ChatName(ctx, "s1", chat); got != "Alice" {
 		t.Fatalf("name = %q", got)
 	}
-	chats, _ := s.ListChats(ctx, "s1", 10, 0)
-	if chats[0].Unread != 3 || chats[0].LastMessage != nil {
+	if chats, _ := s.ListChats(ctx, "s1", false, 10, 0); len(chats) != 0 {
+		t.Fatalf("chat without messages listed: %+v", chats)
+	}
+	_, _ = s.SaveMessage(ctx, "s1", Message{ID: "first", ChatID: chat, Timestamp: 5, Type: "text"}, false)
+	chats, _ := s.ListChats(ctx, "s1", false, 10, 0)
+	if chats[0].Unread != 3 || chats[0].Name != "Alice" {
 		t.Fatalf("chat: %+v", chats[0])
 	}
 
@@ -178,12 +183,62 @@ func TestUpsertChatAndPurge(t *testing.T) {
 	if err := s.PurgeSessionData(ctx, "s1"); err != nil {
 		t.Fatal(err)
 	}
-	chats, _ = s.ListChats(ctx, "s1", 10, 0)
+	chats, _ = s.ListChats(ctx, "s1", false, 10, 0)
 	msgs, _ := s.ListMessages(ctx, "s1", chat, 0, 10)
 	if len(chats) != 0 || len(msgs) != 0 {
 		t.Fatal("purge left data behind")
 	}
 	if _, err := s.GetSession(ctx, "s1"); err != nil {
 		t.Fatal("purge removed the session row")
+	}
+}
+
+func TestArchivedAndPinned(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for i, id := range []string{"a@s.whatsapp.net", "b@s.whatsapp.net", "c@s.whatsapp.net", "d@s.whatsapp.net"} {
+		_, _ = s.SaveMessage(ctx, "s1", Message{ID: "m" + id, ChatID: id, Timestamp: int64(100 + i), Type: "text"}, true)
+	}
+	// d is newest; pin a (older pin) and b (newer pin); archive c.
+	_ = s.SetPinned(ctx, "s1", "a@s.whatsapp.net", 10)
+	_ = s.SetPinned(ctx, "s1", "b@s.whatsapp.net", 20)
+	_ = s.SetArchived(ctx, "s1", "c@s.whatsapp.net", true, 102) // archived at its last message
+	_ = s.SetArchived(ctx, "s1", "new@s.whatsapp.net", true, 0) // chat known only from app state
+
+	chats, _ := s.ListChats(ctx, "s1", false, 10, 0)
+	var ids []string
+	for _, c := range chats {
+		ids = append(ids, c.ID)
+	}
+	if got := strings.Join(ids, ","); got != "b@s.whatsapp.net,a@s.whatsapp.net,d@s.whatsapp.net" {
+		t.Fatalf("main list order = %s", got)
+	}
+	if !chats[0].Pinned || chats[2].Pinned {
+		t.Fatal("pinned flags wrong")
+	}
+	arch, _ := s.ListChats(ctx, "s1", true, 10, 0)
+	if len(arch) != 1 || arch[0].ID != "c@s.whatsapp.net" || !arch[0].Archived { // "new" has no messages
+		t.Fatalf("archived list = %+v", arch)
+	}
+	sum, _ := s.Summary(ctx, "s1")
+	if sum.Archived != 1 || sum.ArchivedUnread != 1 {
+		t.Fatalf("summary = %+v", sum)
+	}
+	// A newer message unarchives c while the account doesn't keep chats archived...
+	_, _ = s.SaveMessage(ctx, "s1", Message{ID: "late", ChatID: "c@s.whatsapp.net", Timestamp: 200, Type: "text"}, true)
+	if arch, _ := s.ListChats(ctx, "s1", true, 10, 0); len(arch) != 0 {
+		t.Fatalf("c should be unarchived by a new message: %+v", arch)
+	}
+	// ...but stays archived when it does.
+	_ = s.SetUnarchiveChats(ctx, "s1", false)
+	if arch, _ := s.ListChats(ctx, "s1", true, 10, 0); len(arch) != 1 {
+		t.Fatalf("keep-archived: %+v", arch)
+	}
+	_ = s.SetUnarchiveChats(ctx, "s1", true)
+	_ = s.SetArchived(ctx, "s1", "c@s.whatsapp.net", false, 0)
+	_ = s.SetPinned(ctx, "s1", "b@s.whatsapp.net", 0)
+	chats, _ = s.ListChats(ctx, "s1", false, 10, 0)
+	if chats[0].ID != "a@s.whatsapp.net" || len(chats) != 4 {
+		t.Fatalf("after unpin/unarchive: %+v", chats)
 	}
 }
