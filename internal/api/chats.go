@@ -131,3 +131,23 @@ func (s *Server) chatSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, sum)
 }
+
+// chatAction serves archive/unarchive (archive=true) and pin/unpin (archive=false).
+func (s *Server) chatAction(archive, on bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var (
+			res wa.ChatFlags
+			err error
+		)
+		if archive {
+			res, err = s.mgr.SetChatArchived(r.Context(), r.PathValue("id"), r.PathValue("chatId"), on)
+		} else {
+			res, err = s.mgr.SetChatPinned(r.Context(), r.PathValue("id"), r.PathValue("chatId"), on)
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	}
+}

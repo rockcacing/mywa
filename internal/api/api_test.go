@@ -122,6 +122,35 @@ func (f *fakeManager) Revoke(_ context.Context, id, chatID, msgID string) (store
 	return store.Message{ID: msgID, ChatID: chatID, FromMe: true, Type: store.TypeRevoked}, nil
 }
 
+func (f *fakeManager) SetChatArchived(_ context.Context, id, chatID string, archive bool) (wa.ChatFlags, error) {
+	return wa.ChatFlags{ChatID: chatID, Archived: archive}, nil
+}
+func (f *fakeManager) SetChatPinned(_ context.Context, id, chatID string, pin bool) (wa.ChatFlags, error) {
+	if pin && chatID == "full@s.whatsapp.net" {
+		return wa.ChatFlags{}, wa.ErrInvalid
+	}
+	return wa.ChatFlags{ChatID: chatID, Pinned: pin}, nil
+}
+
+func TestChatActions(t *testing.T) {
+	ts, f, _ := newTestServer(t)
+	f.sessions["main"] = wa.Info{ID: "main"}
+	for path, want := range map[string]string{
+		"archive": `"archived":true`, "unarchive": `"archived":false`, "pin": `"pinned":true`, "unpin": `"pinned":false`,
+	} {
+		resp, body := do(t, ts, "POST", "/sessions/main/chats/1@s.whatsapp.net/"+path, "", true)
+		if resp.StatusCode != 200 || !strings.Contains(string(body), want) {
+			t.Fatalf("%s: %d %s", path, resp.StatusCode, body)
+		}
+	}
+	if resp, _ := do(t, ts, "POST", "/sessions/main/chats/full@s.whatsapp.net/pin", "", true); resp.StatusCode != 400 {
+		t.Fatalf("pin over limit: %d", resp.StatusCode)
+	}
+	if resp, _ := do(t, ts, "POST", "/sessions/main/chats/1@s.whatsapp.net/pin", "", false); resp.StatusCode != 401 {
+		t.Fatalf("pin without key: %d", resp.StatusCode)
+	}
+}
+
 func TestRevoke(t *testing.T) {
 	ts, f, _ := newTestServer(t)
 	f.sessions["main"] = wa.Info{ID: "main"}

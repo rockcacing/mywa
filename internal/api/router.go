@@ -28,6 +28,8 @@ type Manager interface {
 	ListMessages(ctx context.Context, id, chatID string, before int64, limit int) ([]store.Message, error)
 	Media(ctx context.Context, id, chatID, msgID string, thumb bool) (wa.Media, error)
 	Revoke(ctx context.Context, id, chatID, msgID string) (store.Message, error)
+	SetChatArchived(ctx context.Context, id, chatID string, archive bool) (wa.ChatFlags, error)
+	SetChatPinned(ctx context.Context, id, chatID string, pin bool) (wa.ChatFlags, error)
 }
 
 type Server struct {
@@ -63,6 +65,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /sessions/{id}/chats/{chatId}/messages", s.listMessages)
 	mux.HandleFunc("GET /sessions/{id}/chats/{chatId}/messages/{msgId}/media", s.media)
 	mux.HandleFunc("DELETE /sessions/{id}/chats/{chatId}/messages/{msgId}", s.revoke)
+	mux.HandleFunc("POST /sessions/{id}/chats/{chatId}/archive", s.chatAction(true, true))
+	mux.HandleFunc("POST /sessions/{id}/chats/{chatId}/unarchive", s.chatAction(true, false))
+	mux.HandleFunc("POST /sessions/{id}/chats/{chatId}/pin", s.chatAction(false, true))
+	mux.HandleFunc("POST /sessions/{id}/chats/{chatId}/unpin", s.chatAction(false, false))
 	mux.HandleFunc("POST /sessions/{id}/messages/send-text", s.sendText)
 
 	mux.HandleFunc("GET /events", s.events)

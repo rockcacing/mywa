@@ -242,3 +242,25 @@ func TestArchivedAndPinned(t *testing.T) {
 		t.Fatalf("after unpin/unarchive: %+v", chats)
 	}
 }
+
+func TestChatState(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	chat := "a@s.whatsapp.net"
+	if _, err := s.GetChatState(ctx, "s1", chat); err != ErrNotFound {
+		t.Fatalf("missing chat: %v", err)
+	}
+	_, _ = s.SaveMessage(ctx, "s1", Message{ID: "m1", ChatID: chat, Timestamp: 50, Type: "text"}, false)
+	_ = s.SetPinned(ctx, "s1", chat, 7)
+	st, err := s.GetChatState(ctx, "s1", chat)
+	if err != nil || !st.Pinned || st.Archived || st.LastMessageID != "m1" || st.LastMessageTS != 50 {
+		t.Fatalf("state = %+v, %v", st, err)
+	}
+	if n, _ := s.PinnedCount(ctx, "s1"); n != 1 {
+		t.Fatalf("pinned count = %d", n)
+	}
+	_ = s.SetArchived(ctx, "s1", chat, true, 50)
+	if st, _ := s.GetChatState(ctx, "s1", chat); !st.Archived {
+		t.Fatal("not archived")
+	}
+}

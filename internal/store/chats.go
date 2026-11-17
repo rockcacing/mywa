@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 )
 
@@ -130,4 +132,33 @@ func (s *Store) ListChats(ctx context.Context, sessionID string, archived bool, 
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// ChatState is what archive/pin actions need to know about one chat.
+type ChatState struct {
+	Archived      bool
+	Pinned        bool
+	LastMessageID string
+	LastMessageTS int64
+}
+
+func (s *Store) GetChatState(ctx context.Context, sessionID, jid string) (ChatState, error) {
+	var c ChatState
+	var arch int
+	var pinnedAt int64
+	err := s.DB.QueryRowContext(ctx, `
+		SELECT `+isArchived+`, pinned_at, last_msg_id, last_msg_at FROM chats WHERE session_id = ? AND jid = ?`,
+		sessionID, jid).Scan(&arch, &pinnedAt, &c.LastMessageID, &c.LastMessageTS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return c, ErrNotFound
+	}
+	c.Archived, c.Pinned = arch == 1, pinnedAt > 0
+	return c, err
+}
+
+// PinnedCount counts the session's pinned chats.
+func (s *Store) PinnedCount(ctx context.Context, sessionID string) (int, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM chats WHERE session_id = ? AND pinned_at > 0`, sessionID).Scan(&n)
+	return n, err
 }

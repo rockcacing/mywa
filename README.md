@@ -51,6 +51,8 @@ WhatsApp rotates it. Once you scan it, the page switches to your chats:
 - The list is newest activity first, with unread counts, a filter box, and live updates.
   Pinned chats (📌) stay on top. An **Archived** entry at the top opens your archived
   chats; ← returns to the main list.
+- Press and hold a chat (or right-click it, or use ⋮ in an open chat) for **Pin/Unpin
+  chat** and **Archive/Unarchive chat**. These change the chat on your phone too.
 - In a chat, scroll up to load older messages. Type in the box at the bottom to send:
   Enter sends, Shift+Enter adds a new line.
 - Photos and stickers load as you scroll to them (click a photo to open it full size).
@@ -120,6 +122,8 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 | GET | `/sessions/{id}/chats/{chatId}/messages` | `?limit=50&before=<unix ts>`, newest first. To page back, pass the oldest `timestamp` you have as `before`. |
 | GET | `/sessions/{id}/chats/{chatId}/messages/{msgId}/media` | The attachment of an image, video, GIF, voice/audio, document or sticker message. `?thumb=1` returns its small embedded JPEG preview. Images, audio and video are served inline; everything else is sent as a download. `410 MEDIA_EXPIRED` means WhatsApp no longer has the file. |
 | DELETE | `/sessions/{id}/chats/{chatId}/messages/{msgId}` | Deletes one of your own messages for everyone (within 60 hours of sending, as in WhatsApp). Emits `message.revoked`. |
+| POST | `/sessions/{id}/chats/{chatId}/archive` · `/unarchive` | Archives or unarchives the chat on your account (all devices). Archiving also unpins. Returns `{chatId, archived, pinned}`. |
+| POST | `/sessions/{id}/chats/{chatId}/pin` · `/unpin` | Pins or unpins the chat. At most 3 pinned chats; archived chats can't be pinned. |
 | POST | `/sessions/{id}/messages/send-text` | `{"chatId", "text", "replyTo"?}`. `replyTo` is the id of a stored message in that chat. |
 
 `chatId` can be a phone number in international format (`6281234567890`,
