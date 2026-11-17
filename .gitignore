@@ -1,0 +1,6 @@
+/bin/
+/mywa
+*.db
+*.db-wal
+*.db-shm
+.env
