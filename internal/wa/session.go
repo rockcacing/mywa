@@ -85,7 +85,20 @@ func (s *Session) Info() Info {
 }
 
 func (s *Session) infoLocked() Info {
-	return Info{ID: s.id, Status: s.status, JID: s.jid, PushName: s.pushName, Error: s.lastErr, CreatedAt: s.created.Unix()}
+	return Info{ID: s.id, Status: s.status, JID: accountJID(s.jid), PushName: s.pushName, Error: s.lastErr, CreatedAt: s.created.Unix()}
+}
+
+// accountJID turns the stored device JID ("6012...:12@s.whatsapp.net") into the
+// account JID callers expect ("6012...@s.whatsapp.net").
+func accountJID(deviceJID string) string {
+	if deviceJID == "" {
+		return ""
+	}
+	j, err := types.ParseJID(deviceJID)
+	if err != nil {
+		return deviceJID
+	}
+	return j.ToNonAD().String()
 }
 
 func (s *Session) shouldRestore() bool {
@@ -196,19 +209,39 @@ func (s *Session) Connect(ctx context.Context) (Info, error) {
 // deviceLocked returns the saved device for a linked session, or a fresh one.
 func (s *Session) deviceLocked(ctx context.Context) (*store.Device, error) {
 	if s.jid != "" {
-		jid, err := types.ParseJID(s.jid)
-		if err == nil {
-			dev, err := s.m.container.GetDevice(ctx, jid)
-			if err != nil {
-				return nil, fmt.Errorf("load device: %w", err)
-			}
-			if dev != nil {
-				return dev, nil
-			}
+		dev, err := s.findDevice(ctx, s.jid)
+		if err != nil {
+			return nil, fmt.Errorf("load device: %w", err)
+		}
+		if dev != nil {
+			return dev, nil
 		}
 		s.log.Warn("saved device missing; a new link is needed", "jid", s.jid)
 	}
 	return s.m.container.NewDevice(), nil
+}
+
+// findDevice looks up whatsmeow's stored device for jid. whatsmeow keys devices by the
+// full device JID (user:device@server). Older mywa versions saved only the account JID,
+// so when there is no exact match, fall back to the stored device of the same account.
+func (s *Session) findDevice(ctx context.Context, jidStr string) (*store.Device, error) {
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		return nil, nil
+	}
+	if jid.Device != 0 {
+		return s.m.container.GetDevice(ctx, jid)
+	}
+	all, err := s.m.container.GetAllDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range all {
+		if d.ID != nil && d.ID.User == jid.User && d.ID.Server == jid.Server {
+			return d, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *Session) waitSettled(ctx context.Context, timeout time.Duration) Info {
@@ -365,11 +398,9 @@ func (s *Session) unlink(ctx context.Context, deleteDevice bool) {
 		go cli.Disconnect()
 	}
 	if deleteDevice && jid != "" {
-		if j, err := types.ParseJID(jid); err == nil {
-			if dev, err := s.m.container.GetDevice(ctx, j); err == nil && dev != nil {
-				if err := s.m.container.DeleteDevice(ctx, dev); err != nil {
-					s.log.Warn("delete device", "err", err)
-				}
+		if dev, err := s.findDevice(ctx, jid); err == nil && dev != nil {
+			if err := s.m.container.DeleteDevice(ctx, dev); err != nil {
+				s.log.Warn("delete device", "err", err)
 			}
 		}
 	}

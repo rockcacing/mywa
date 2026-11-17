@@ -43,8 +43,9 @@ docker run -d -p 8080:8080 -e MYWA_API_KEY=$MYWA_API_KEY -v mywa-data:/data mywa
 
 Open the server's root URL, e.g. `http://localhost:8080/`. The page asks for the API
 key, creates session `main` if needed, and shows the QR code, which refreshes live as
-WhatsApp rotates it. Once you scan it, the page shows the linked number, with
-Disconnect and Log out buttons.
+WhatsApp rotates it. Once you scan it, the page switches to your chat list: newest
+activity first, with unread counts, a filter box, and live updates. Click a chat to
+read its messages; scroll up to load older ones. The ⋮ menu has Disconnect and Log out.
 
 - Append `#key=<api key>` to the URL to skip the prompt. Browsers don't send the
   part after `#` to the server, and the page removes it from the address bar.

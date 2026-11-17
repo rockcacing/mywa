@@ -25,18 +25,18 @@ func (s *Session) handleEvent(cli *whatsmeow.Client, evt any) {
 
 	switch e := evt.(type) {
 	case *events.PairSuccess:
-		s.setAccount(e.ID.ToNonAD().String(), "")
+		s.setAccount(e.ID.String(), "")
 		s.setStatus(StatusConnecting, "")
 
 	case *events.Connected:
 		if cli.Store.ID != nil {
-			s.setAccount(cli.Store.ID.ToNonAD().String(), cli.Store.PushName)
+			s.setAccount(cli.Store.ID.String(), cli.Store.PushName)
 		}
 		s.setStatus(StatusReady, "")
 
 	case *events.PushNameSetting:
 		if cli.Store.ID != nil {
-			s.setAccount(cli.Store.ID.ToNonAD().String(), cli.Store.PushName)
+			s.setAccount(cli.Store.ID.String(), cli.Store.PushName)
 		}
 
 	case *events.Disconnected:

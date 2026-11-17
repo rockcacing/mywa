@@ -4,109 +4,177 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>mywa · Link WhatsApp</title>
+<title>mywa</title>
 <style>
   :root {
-    --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #5d6470; --line: #e2e5ea;
+    --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #5d6470; --line: #e2e5ea; --hover: #f0f2f5;
     --accent: #128c4a; --accent-text: #ffffff; --warn: #a15c00; --err: #b42318; --qr-bg: #ffffff;
+    --me: #d9fdd3; --them: #ffffff; --chat-bg: #efeae2; --tick-read: #1d8fe1; --badge: #128c4a;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #101215; --card: #191c21; --text: #e8eaed; --muted: #9aa1ab; --line: #2b3038;
+      --bg: #101215; --card: #191c21; --text: #e8eaed; --muted: #9aa1ab; --line: #2b3038; --hover: #22262c;
       --accent: #25b866; --accent-text: #0b1a11; --warn: #f0b45a; --err: #ff7b72; --qr-bg: #ffffff;
+      --me: #144d37; --them: #22262c; --chat-bg: #0d1013; --tick-read: #53bdeb; --badge: #25b866;
     }
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px;
-    background: var(--bg); color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  main {
-    width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line);
-    border-radius: 16px; padding: 28px 24px;
+  button {
+    padding: 9px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--card);
+    color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
   }
-  h1 { font-size: 20px; margin: 0 0 4px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.link { border: 0; background: none; padding: 6px 8px; color: var(--muted); }
+  button:disabled { opacity: .6; cursor: default; }
+  [hidden] { display: none !important; }
+  .err { color: var(--err); white-space: pre-wrap; }
+  .muted { color: var(--muted); }
+
+  /* ---------- Linking card ---------- */
+  .center { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; }
+  .card { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 28px 24px; }
+  .card h1 { font-size: 20px; margin: 0 0 4px; }
   .sub { color: var(--muted); margin: 0 0 20px; }
   .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 16px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
   .dot.ok { background: var(--accent); } .dot.wait { background: var(--warn); } .dot.bad { background: var(--err); }
-  .qr {
-    background: var(--qr-bg); border-radius: 12px; padding: 12px; aspect-ratio: 1; width: 100%;
-    display: grid; place-items: center; border: 1px solid var(--line);
-  }
+  .qr { background: var(--qr-bg); border-radius: 12px; padding: 12px; aspect-ratio: 1; width: 100%; display: grid; place-items: center; border: 1px solid var(--line); }
   .qr img { width: 100%; height: 100%; image-rendering: pixelated; }
   .qr .ph { color: #5d6470; font-size: 14px; text-align: center; padding: 16px; }
   ol { padding-left: 20px; color: var(--muted); margin: 16px 0 0; }
   ol b { color: var(--text); font-weight: 600; }
   .note { color: var(--muted); font-size: 13px; margin-top: 12px; }
-  .err { color: var(--err); margin-top: 12px; white-space: pre-wrap; }
-  .account { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
-  .account div { color: var(--muted); font-size: 13px; }
-  .account strong { display: block; font-size: 17px; word-break: break-all; }
   label { display: block; font-weight: 600; margin-bottom: 6px; }
-  input {
-    width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--bg); color: var(--text); font: inherit;
-  }
+  input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
-  button {
-    flex: 1; min-width: 120px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line);
-    background: var(--card); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
-  }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-  button:disabled { opacity: .6; cursor: default; }
-  [hidden] { display: none !important; }
+  .row button { flex: 1; min-width: 120px; }
+
+  /* ---------- Linked app ---------- */
+  .shell { height: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; background: var(--card); border-inline: 1px solid var(--line); }
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header .who { flex: 1; min-width: 0; }
+  header .who strong { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header .who span { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  header .who .dot { width: 8px; height: 8px; }
+  .menu { position: relative; }
+  .menu-list { position: absolute; right: 0; top: 100%; z-index: 5; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; min-width: 170px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+  .menu-list button { display: block; width: 100%; text-align: left; border: 0; background: none; font-weight: 500; }
+  .menu-list button:hover { background: var(--hover); }
+  .banner { padding: 8px 16px; font-size: 13px; background: var(--hover); color: var(--warn); border-bottom: 1px solid var(--line); }
+
+  .search { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .search input { padding: 8px 12px; }
+  .list { flex: 1; overflow-y: auto; }
+  .chat { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 16px; border: 0; border-radius: 0; background: none; text-align: left; font-weight: 400; border-bottom: 1px solid var(--line); }
+  .chat:hover { background: var(--hover); }
+  .avatar { width: 42px; height: 42px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; color: #fff; font-size: 16px; }
+  .chat .body { flex: 1; min-width: 0; }
+  .chat .top, .chat .bottom { display: flex; gap: 8px; align-items: baseline; }
+  .chat .name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat .time { color: var(--muted); font-size: 12px; flex: none; }
+  .chat .time.unread { color: var(--badge); font-weight: 600; }
+  .chat .preview { flex: 1; color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { background: var(--badge); color: var(--accent-text); border-radius: 999px; font-size: 12px; font-weight: 700; padding: 0 7px; min-width: 20px; text-align: center; flex: none; }
+  .more { display: block; margin: 12px auto; }
+  .empty { padding: 32px 16px; text-align: center; color: var(--muted); }
+
+  .messages { flex: 1; overflow-y: auto; background: var(--chat-bg); padding: 12px 12px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .day { align-self: center; font-size: 12px; color: var(--muted); background: var(--card); border-radius: 8px; padding: 2px 10px; margin: 8px 0; }
+  .msg { max-width: 78%; padding: 6px 10px 4px; border-radius: 10px; background: var(--them); align-self: flex-start; box-shadow: 0 1px 0 rgba(0,0,0,.06); word-wrap: break-word; }
+  .msg.me { background: var(--me); align-self: flex-end; }
+  .msg .sender { font-size: 12px; font-weight: 700; margin-bottom: 1px; }
+  .msg .text { white-space: pre-wrap; }
+  .msg .kind { font-style: italic; color: var(--muted); }
+  .msg .meta { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; white-space: nowrap; }
+  .msg .tick.read { color: var(--tick-read); }
 </style>
 </head>
 <body>
-<main>
-  <h1>Link WhatsApp</h1>
-  <p class="sub">Session <b id="sid">main</b></p>
 
-  <section id="login" hidden>
-    <form id="keyform">
-      <label for="key">API key</label>
-      <input id="key" type="password" autocomplete="current-password" required>
-      <div class="row"><button class="primary" type="submit">Continue</button></div>
-    </form>
-    <p class="note">The key is kept in this browser only.</p>
+<!-- Login / linking card -->
+<div class="center" id="cardView" hidden>
+  <div class="card">
+    <h1>Link WhatsApp</h1>
+    <p class="sub">Session <b class="sid">main</b></p>
+
+    <section id="login" hidden>
+      <form id="keyform">
+        <label for="key">API key</label>
+        <input id="key" type="password" autocomplete="current-password" required>
+        <div class="row"><button class="primary" type="submit">Continue</button></div>
+      </form>
+      <p class="note">The key is kept in this browser only.</p>
+    </section>
+
+    <section id="linking" hidden>
+      <div class="status"><span class="dot" id="dot"></span><span id="stext">Loading…</span></div>
+      <div id="qrbox">
+        <div class="qr"><div class="ph" id="qrph">Preparing QR code…</div><img id="qrimg" alt="WhatsApp link QR code" hidden></div>
+        <ol>
+          <li>Open <b>WhatsApp</b> on your phone</li>
+          <li>Go to <b>Settings → Linked devices → Link a device</b></li>
+          <li>Point your phone at this QR code</li>
+        </ol>
+        <p class="note">The code refreshes automatically about every 20 seconds.</p>
+      </div>
+      <div class="row">
+        <button class="primary" id="btnConnect" hidden>New QR code</button>
+        <button id="btnCancel" hidden>Cancel</button>
+        <button id="btnLogout2" hidden>Log out</button>
+      </div>
+      <p class="err" id="err" hidden></p>
+      <div class="row"><button class="link" id="btnForget" type="button">Forget key</button></div>
+    </section>
+  </div>
+</div>
+
+<!-- Linked: chats -->
+<div class="shell" id="appView" hidden>
+  <header id="listHeader">
+    <div class="who">
+      <strong id="acctName">WhatsApp</strong>
+      <span><span class="dot ok" id="appDot"></span><span id="acctLine"></span></span>
+    </div>
+    <div class="menu">
+      <button class="link" id="menuBtn" aria-label="Menu">⋮</button>
+      <div class="menu-list" id="menuList" hidden>
+        <button id="mDisconnect">Disconnect</button>
+        <button id="mLogout">Log out (unlink)</button>
+        <button id="mForget">Forget key</button>
+      </div>
+    </div>
+  </header>
+  <header id="chatHeader" hidden>
+    <button class="link" id="backBtn" aria-label="Back">←</button>
+    <div class="avatar" id="chatAvatar"></div>
+    <div class="who"><strong id="chatTitle"></strong><span id="chatSub"></span></div>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+
+  <section id="listView" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="search"><input id="filter" type="search" placeholder="Filter loaded chats" autocomplete="off"></div>
+    <div class="list" id="list"></div>
   </section>
 
-  <section id="app" hidden>
-    <div class="status"><span class="dot" id="dot"></span><span id="stext">Loading…</span></div>
-
-    <div id="qrbox">
-      <div class="qr"><div class="ph" id="qrph">Preparing QR code…</div><img id="qrimg" alt="WhatsApp link QR code" hidden></div>
-      <ol>
-        <li>Open <b>WhatsApp</b> on your phone</li>
-        <li>Go to <b>Settings → Linked devices → Link a device</b></li>
-        <li>Point your phone at this QR code</li>
-      </ol>
-      <p class="note">The code refreshes automatically about every 20 seconds.</p>
-    </div>
-
-    <div id="linked" hidden>
-      <div class="account"><div>Linked account</div><strong id="acct"></strong><div id="acctname"></div></div>
-    </div>
-
-    <div class="row">
-      <button class="primary" id="btnConnect" hidden>New QR code</button>
-      <button id="btnDisconnect" hidden>Disconnect</button>
-      <button id="btnLogout" hidden>Log out</button>
-    </div>
-    <p class="err" id="err" hidden></p>
-    <div class="row"><button id="btnForget" type="button">Forget key</button></div>
+  <section id="chatView" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="messages" id="messages"></div>
   </section>
-</main>
+</div>
 
 <script>
 (() => {
   const params = new URLSearchParams(location.search);
   const sid = params.get("session") || "main";
+  const S = encodeURIComponent(sid);
   const KEY_STORE = "mywa.apikey";
+  const PAGE = 50;
   const $ = (id) => document.getElementById(id);
-  $("sid").textContent = sid;
+  document.querySelectorAll(".sid").forEach((e) => (e.textContent = sid));
 
   // A key in the URL fragment (#key=...) is never sent to the server. Save it and strip it from the address bar.
   const frag = new URLSearchParams(location.hash.slice(1));
@@ -117,26 +185,81 @@
   let key = "";
   try { key = localStorage.getItem(KEY_STORE) || ""; } catch {}
 
-  let ws = null, pollTimer = null, qrURL = null, lastStatus = "";
+  let ws = null, pollTimer = null, qrURL = null, lastStatus = "", info = null;
+  let chats = [], chatsDone = false, chatsLoading = false, refreshTimer = null;
+  let current = null, msgs = [], msgsDone = false, msgsLoading = false;
 
+  // ---------- helpers ----------
   async function api(method, path, body) {
     const res = await fetch(path, {
-      method, headers: { "X-API-Key": key, ...(body ? { "Content-Type": "application/json" } : {}) },
-      body: body ? JSON.stringify(body) : undefined, cache: "no-store",
+      method, cache: "no-store",
+      headers: { "X-API-Key": key, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
     });
     if (res.status === 401) { forget("That API key was not accepted."); throw new Error("unauthorized"); }
     return res;
   }
-
+  async function getJSON(path) {
+    const res = await api("GET", path);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || res.statusText);
+    return body;
+  }
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text; // always textContent: message text is untrusted
+    return e;
+  }
   function showError(msg) { $("err").hidden = !msg; $("err").textContent = msg || ""; }
+
+  function displayName(c) {
+    if (c.name) return c.name;
+    const [user, server] = c.id.split("@");
+    if (server === "s.whatsapp.net") return "+" + user;
+    if (server === "lid") return "Unknown contact";
+    return c.id;
+  }
+  const COLORS = ["#e57373", "#f06292", "#ba68c8", "#7986cb", "#4fc3f7", "#4db6ac", "#81c784", "#ffb74d", "#a1887f", "#90a4ae"];
+  function avatar(node, name, id) {
+    let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    node.style.background = COLORS[h % COLORS.length];
+    const letter = [...name.replace(/^[^\p{L}\p{N}]+/u, "")][0] || "#";
+    node.textContent = letter.toUpperCase();
+  }
+  const KIND = { image: "📷 Photo", video: "🎥 Video", gif: "GIF", audio: "🎵 Audio", voice: "🎤 Voice message",
+    document: "📄 Document", sticker: "Sticker", location: "📍 Location", contact: "👤 Contact", poll: "📊 Poll",
+    event: "📅 Event", revoked: "🚫 This message was deleted", unknown: "Unsupported message" };
+  function previewText(type, text) {
+    if (type === "text") return text;
+    const k = KIND[type] || type;
+    return text && type !== "revoked" ? `${k}: ${text}` : k;
+  }
+  function sameDay(a, b) { return a.toDateString() === b.toDateString(); }
+  function listTime(ts) {
+    const d = new Date(ts * 1000), now = new Date();
+    if (sameDay(d, now)) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (sameDay(d, y)) return "Yesterday";
+    if (now - d < 6 * 864e5) return d.toLocaleDateString([], { weekday: "short" });
+    return d.toLocaleDateString();
+  }
+  function dayLabel(d) {
+    const now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+    if (sameDay(d, now)) return "Today";
+    if (sameDay(d, y)) return "Yesterday";
+    return d.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  }
 
   function forget(msg) {
     try { localStorage.removeItem(KEY_STORE); } catch {}
     key = ""; if (ws) ws.close(); clearInterval(pollTimer);
-    $("app").hidden = true; $("login").hidden = false;
+    $("appView").hidden = true; $("cardView").hidden = false;
+    $("linking").hidden = true; $("login").hidden = false;
     if (msg) { $("key").value = ""; $("key").placeholder = msg; }
   }
 
+  // ---------- session status ----------
   const LABELS = {
     created: ["Not linked", "bad"], connecting: ["Connecting…", "wait"], qr_ready: ["Scan the QR code", "wait"],
     ready: ["Linked", "ok"], disconnected: ["Disconnected", "bad"], logged_out: ["Logged out", "bad"],
@@ -144,24 +267,32 @@
   };
 
   async function refreshQR() {
-    const res = await api("GET", `/sessions/${encodeURIComponent(sid)}/qr?format=png&t=${Date.now()}`);
+    const res = await api("GET", `/sessions/${S}/qr?format=png&t=${Date.now()}`);
     if (!res.ok) return;
-    const blob = await res.blob();
     if (qrURL) URL.revokeObjectURL(qrURL);
-    qrURL = URL.createObjectURL(blob);
+    qrURL = URL.createObjectURL(await res.blob());
     $("qrimg").src = qrURL; $("qrimg").hidden = false; $("qrph").hidden = true;
   }
 
-  function render(info) {
-    const st = info.status;
+  function render(i) {
+    info = i;
+    const st = i.status;
     const [label, cls] = LABELS[st] || [st, ""];
-    $("stext").textContent = label; $("dot").className = "dot " + cls;
-    const linked = st === "ready";
-    $("linked").hidden = !linked; $("qrbox").hidden = linked;
+    const linked = !!i.jid && ["ready", "connecting"].includes(st);
+
+    // Once linked, stay on the chats view through brief reconnects.
+    $("appView").hidden = !linked; $("cardView").hidden = linked;
     if (linked) {
-      $("acct").textContent = "+" + (info.jid || "").split("@")[0];
-      $("acctname").textContent = info.pushName || "";
+      $("acctName").textContent = i.pushName || "+" + i.jid.split("@")[0];
+      $("acctLine").textContent = st === "ready" ? "+" + i.jid.split("@")[0] : "Reconnecting…";
+      $("appDot").className = "dot " + cls;
+      if (lastStatus !== "ready" && st === "ready" && chats.length === 0) loadChats(true);
+      lastStatus = st;
+      return;
     }
+
+    $("login").hidden = true; $("linking").hidden = false;
+    $("stext").textContent = label; $("dot").className = "dot " + cls;
     if (st !== "qr_ready") {
       $("qrimg").hidden = true; $("qrph").hidden = false;
       $("qrph").textContent = st === "connecting" ? "Connecting to WhatsApp…" : "No QR code right now.";
@@ -169,24 +300,252 @@
     const idle = ["created", "disconnected", "logged_out", "failed", "action_required"].includes(st);
     $("btnConnect").hidden = !idle;
     $("btnConnect").textContent = st === "disconnected" ? "Reconnect" : "New QR code";
-    $("btnDisconnect").hidden = !(linked || st === "qr_ready" || st === "connecting");
-    $("btnLogout").hidden = !(linked || st === "disconnected");
-    showError(info.error || "");
+    $("btnCancel").hidden = !(st === "qr_ready" || st === "connecting");
+    $("btnLogout2").hidden = st !== "disconnected";
+    showError(i.error || "");
     if (st === "qr_ready" && lastStatus !== "qr_ready") refreshQR();
+    if (st !== "ready") { chats = []; chatsDone = false; closeChat(); }
     lastStatus = st;
   }
 
   async function loadStatus() {
-    const res = await api("GET", `/sessions/${encodeURIComponent(sid)}`);
+    const res = await api("GET", `/sessions/${S}`);
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error((await res.json()).error);
-    return res.json();
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error);
+    return body;
+  }
+
+  async function sessionAction(path, confirmMsg) {
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    $("menuList").hidden = true;
+    try {
+      const res = await api("POST", `/sessions/${S}/${path}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error);
+      render(body);
+    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
+  }
+
+  // ---------- chats ----------
+  async function loadChats(reset) {
+    if (chatsLoading) return;
+    chatsLoading = true;
+    try {
+      const offset = reset ? 0 : chats.length;
+      const page = await getJSON(`/sessions/${S}/chats?limit=${PAGE}&offset=${offset}`);
+      chats = reset ? page : chats.concat(page);
+      chatsDone = page.length < PAGE;
+      renderChats();
+    } catch (e) {
+      if (e.message !== "unauthorized") banner("Could not load chats: " + e.message);
+    } finally { chatsLoading = false; }
+  }
+
+  // Re-read the chats already on screen (newest activity first) after live events.
+  function refreshChatsSoon() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(async () => {
+      if (!info || info.status !== "ready") return;
+      try {
+        const n = Math.min(200, Math.max(PAGE, chats.length));
+        const page = await getJSON(`/sessions/${S}/chats?limit=${n}&offset=0`);
+        const rest = chats.slice(n).filter((c) => !page.some((p) => p.id === c.id));
+        chats = page.concat(rest);
+        renderChats();
+      } catch {}
+    }, 600);
+  }
+
+  function renderChats() {
+    const list = $("list");
+    const q = $("filter").value.trim().toLowerCase();
+    list.replaceChildren();
+    const shown = q ? chats.filter((c) => displayName(c).toLowerCase().includes(q) || c.id.includes(q)) : chats;
+    if (shown.length === 0) {
+      list.append(el("div", "empty", q ? "No loaded chat matches." :
+        "No chats yet. Your phone sends recent chats a minute or so after linking."));
+    }
+    for (const c of shown) {
+      const name = displayName(c);
+      const row = el("button", "chat");
+      row.type = "button";
+      const av = el("div", "avatar"); avatar(av, name, c.id);
+      const body = el("div", "body");
+      const top = el("div", "top");
+      top.append(el("span", "name", (c.isGroup ? "👥 " : "") + name));
+      const lm = c.lastMessage;
+      if (lm) top.append(el("span", "time" + (c.unread ? " unread" : ""), listTime(lm.timestamp)));
+      const bottom = el("div", "bottom");
+      let pv = lm ? previewText(lm.type, lm.text) : "";
+      if (lm && lm.fromMe) pv = "You: " + pv;
+      bottom.append(el("span", "preview", pv || " "));
+      if (c.unread) bottom.append(el("span", "badge", c.unread > 99 ? "99+" : String(c.unread)));
+      body.append(top, bottom);
+      row.append(av, body);
+      row.onclick = () => openChat(c);
+      list.append(row);
+    }
+    if (!chatsDone && !q) {
+      const more = el("button", "more", chatsLoading ? "Loading…" : "Load more chats");
+      more.type = "button";
+      more.onclick = () => loadChats(false);
+      list.append(more);
+    }
+  }
+
+  // ---------- one chat ----------
+  async function openChat(c) {
+    current = c; msgs = []; msgsDone = false;
+    const name = displayName(c);
+    avatar($("chatAvatar"), name, c.id);
+    $("chatTitle").textContent = name;
+    $("chatSub").textContent = c.isGroup ? "Group" : (c.id.endsWith("@s.whatsapp.net") ? "+" + c.id.split("@")[0] : "");
+    $("listHeader").hidden = true; $("chatHeader").hidden = false;
+    $("listView").hidden = true; $("chatView").hidden = false;
+    $("messages").replaceChildren(el("div", "empty", "Loading messages…"));
+    history.pushState({ chat: c.id }, "");
+    await loadOlder(true);
+  }
+
+  function closeChat() {
+    current = null; msgs = [];
+    $("listHeader").hidden = false; $("chatHeader").hidden = true;
+    $("listView").hidden = false; $("chatView").hidden = true;
+  }
+
+  // Messages come newest first; keep msgs oldest first. Page back with before=<oldest ts + 1>
+  // and drop duplicates, so messages sharing the oldest second are not skipped.
+  async function loadOlder(first) {
+    if (!current || msgsLoading || msgsDone) return;
+    msgsLoading = true;
+    const chat = current;
+    try {
+      const before = msgs.length ? msgs[0].timestamp + 1 : 0;
+      const page = await getJSON(`/sessions/${S}/chats/${encodeURIComponent(chat.id)}/messages?limit=${PAGE}` + (before ? `&before=${before}` : ""));
+      if (current !== chat) return;
+      const seen = new Set(msgs.map((m) => m.id));
+      const older = page.filter((m) => !seen.has(m.id)).reverse();
+      msgsDone = page.length < PAGE || older.length === 0;
+      const box = $("messages");
+      const prevHeight = box.scrollHeight, prevTop = box.scrollTop;
+      msgs = older.concat(msgs);
+      renderMessages();
+      box.scrollTop = first ? box.scrollHeight : box.scrollHeight - prevHeight + prevTop;
+    } catch (e) {
+      if (e.message !== "unauthorized") $("messages").replaceChildren(el("div", "empty", "Could not load messages: " + e.message));
+    } finally { msgsLoading = false; }
+  }
+
+  function tick(status) {
+    const t = { sent: "✓", delivered: "✓✓", read: "✓✓", played: "✓✓" }[status];
+    if (!t) return null;
+    return el("span", "tick" + (status === "read" || status === "played" ? " read" : ""), " " + t);
+  }
+
+  function renderMessages() {
+    const box = $("messages");
+    box.replaceChildren();
+    if (!msgsDone) {
+      const more = el("button", "more", "Load older messages");
+      more.type = "button"; more.onclick = () => loadOlder(false);
+      box.append(more);
+    }
+    if (msgs.length === 0) box.append(el("div", "empty", "No stored messages in this chat."));
+    let lastDay = null;
+    for (const m of msgs) {
+      const d = new Date(m.timestamp * 1000);
+      if (!lastDay || !sameDay(d, lastDay)) { box.append(el("div", "day", dayLabel(d))); lastDay = d; }
+      const b = el("div", "msg" + (m.fromMe ? " me" : ""));
+      b.dataset.id = m.id;
+      if (current && current.isGroup && !m.fromMe) {
+        const who = el("div", "sender", m.senderName || "+" + (m.senderId || "").split("@")[0]);
+        let h = 0; for (const ch of m.senderId || "") h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+        who.style.color = COLORS[h % COLORS.length];
+        b.append(who);
+      }
+      if (m.type !== "text") b.append(el("div", "kind", KIND[m.type] || m.type));
+      if (m.text && m.type !== "revoked") b.append(el("div", "text", m.text));
+      const meta = el("div", "meta", (m.edited ? "edited · " : "") + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      if (m.fromMe) { const t = tick(m.status); if (t) meta.append(t); }
+      b.append(meta);
+      box.append(b);
+    }
+  }
+
+  function nearBottom() { const b = $("messages"); return b.scrollHeight - b.scrollTop - b.clientHeight < 120; }
+
+  function onLiveMessage(m) {
+    refreshChatsSoon();
+    if (!current || m.chatId !== current.id || msgs.some((x) => x.id === m.id)) return;
+    const stick = nearBottom();
+    msgs.push(m);
+    renderMessages();
+    if (stick) $("messages").scrollTop = $("messages").scrollHeight;
+  }
+
+  function patchMessages(chatId, fn) {
+    if (!current || chatId !== current.id) return;
+    let changed = false;
+    for (const m of msgs) if (fn(m)) changed = true;
+    if (changed) { const top = $("messages").scrollTop; renderMessages(); $("messages").scrollTop = top; }
+  }
+
+  function banner(text) { $("banner").hidden = !text; $("banner").textContent = text || ""; }
+
+  // ---------- live events ----------
+  function openEvents() {
+    if (ws) { ws.onclose = null; ws.close(); }
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(`${proto}//${location.host}/events?session=${S}&api_key=${encodeURIComponent(key)}`);
+    ws.onopen = () => banner("");
+    ws.onmessage = (e) => {
+      const ev = JSON.parse(e.data), d = ev.data;
+      switch (ev.event) {
+        case "session.status": render(d); break;
+        case "session.qr": refreshQR(); break;
+        case "message.received": case "message.sent": onLiveMessage(d); break;
+        case "message.ack": {
+          const ids = new Set(d.ids);
+          patchMessages(d.chatId, (m) => ids.has(m.id) && m.status !== d.status && (m.status = d.status, true));
+          break;
+        }
+        case "message.edited":
+          patchMessages(d.chatId, (m) => m.id === d.id && (m.text = d.text, m.edited = true, true));
+          refreshChatsSoon(); break;
+        case "message.revoked":
+          patchMessages(d.chatId, (m) => m.id === d.id && (m.type = "revoked", m.text = "", true));
+          refreshChatsSoon(); break;
+      }
+    };
+    ws.onclose = () => {
+      if (!key) return;
+      if (info && info.status === "ready") banner("Live updates paused; reconnecting…");
+      setTimeout(openEvents, 3000);
+    };
+  }
+
+  async function start() {
+    $("cardView").hidden = false; $("login").hidden = true; $("linking").hidden = false;
+    try {
+      let i = await loadStatus();
+      if (!i) {
+        const res = await api("POST", "/sessions", { id: sid });
+        i = await res.json();
+        if (!res.ok) throw new Error(i.error);
+      }
+      render(i);
+      openEvents();
+      clearInterval(pollTimer); // fallback if the WebSocket is blocked
+      pollTimer = setInterval(async () => { try { const s = await loadStatus(); if (s) render(s); } catch {} }, 5000);
+      if (["created", "logged_out"].includes(i.status)) connect();
+    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
   }
 
   async function connect() {
     $("btnConnect").disabled = true;
     try {
-      const res = await api("POST", `/sessions/${encodeURIComponent(sid)}/connect`);
+      const res = await api("POST", `/sessions/${S}/connect`);
       const body = await res.json();
       if (!res.ok) throw new Error(body.error);
       render(body);
@@ -194,50 +553,20 @@
     finally { $("btnConnect").disabled = false; }
   }
 
-  function openEvents() {
-    if (ws) ws.close();
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${proto}//${location.host}/events?session=${encodeURIComponent(sid)}&api_key=${encodeURIComponent(key)}`);
-    ws.onmessage = (e) => {
-      const ev = JSON.parse(e.data);
-      if (ev.event === "session.status") render(ev.data);
-      if (ev.event === "session.qr") refreshQR();
-    };
-    ws.onclose = () => { if (key) setTimeout(openEvents, 3000); };
-  }
-
-  async function start() {
-    $("login").hidden = true; $("app").hidden = false;
-    try {
-      let info = await loadStatus();
-      if (!info) {
-        const res = await api("POST", "/sessions", { id: sid });
-        info = await res.json();
-        if (!res.ok) throw new Error(info.error);
-      }
-      render(info);
-      openEvents();
-      // Fallback in case the WebSocket is blocked: poll the status.
-      clearInterval(pollTimer);
-      pollTimer = setInterval(async () => { try { const i = await loadStatus(); if (i) render(i); } catch {} }, 5000);
-      if (["created", "logged_out"].includes(info.status)) connect();
-    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
-  }
-
-  async function action(path, confirmMsg) {
-    if (confirmMsg && !confirm(confirmMsg)) return;
-    try {
-      const res = await api("POST", `/sessions/${encodeURIComponent(sid)}/${path}`);
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error);
-      render(body);
-    } catch (e) { if (e.message !== "unauthorized") showError(e.message); }
-  }
-
+  // ---------- wiring ----------
   $("btnConnect").onclick = connect;
-  $("btnDisconnect").onclick = () => action("disconnect");
-  $("btnLogout").onclick = () => action("logout", "Unlink this device from your WhatsApp account?");
+  $("btnCancel").onclick = () => sessionAction("disconnect");
+  $("btnLogout2").onclick = () => sessionAction("logout", "Unlink this device from your WhatsApp account?");
   $("btnForget").onclick = () => forget("");
+  $("menuBtn").onclick = (e) => { e.stopPropagation(); $("menuList").hidden = !$("menuList").hidden; };
+  document.addEventListener("click", () => ($("menuList").hidden = true));
+  $("mDisconnect").onclick = () => sessionAction("disconnect", "Disconnect? The link is kept and you can reconnect without a QR code.");
+  $("mLogout").onclick = () => sessionAction("logout", "Unlink this device from your WhatsApp account? Stored chats on this server are deleted.");
+  $("mForget").onclick = () => forget("");
+  $("backBtn").onclick = () => history.back();
+  window.addEventListener("popstate", () => { if (current) closeChat(); });
+  $("filter").oninput = renderChats;
+  $("messages").addEventListener("scroll", () => { if ($("messages").scrollTop < 40) loadOlder(false); });
   $("keyform").onsubmit = (e) => {
     e.preventDefault();
     key = $("key").value.trim();
@@ -245,7 +574,7 @@
     start();
   };
 
-  if (key) start(); else $("login").hidden = false;
+  if (key) start(); else { $("cardView").hidden = false; $("login").hidden = false; }
 })();
 </script>
 </body>
