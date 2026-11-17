@@ -26,6 +26,7 @@ type Manager interface {
 	ListChats(ctx context.Context, id string, limit, offset int) ([]store.Chat, error)
 	ListMessages(ctx context.Context, id, chatID string, before int64, limit int) ([]store.Message, error)
 	Media(ctx context.Context, id, chatID, msgID string, thumb bool) (wa.Media, error)
+	Revoke(ctx context.Context, id, chatID, msgID string) (store.Message, error)
 }
 
 type Server struct {
@@ -59,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /sessions/{id}/chats", s.listChats)
 	mux.HandleFunc("GET /sessions/{id}/chats/{chatId}/messages", s.listMessages)
 	mux.HandleFunc("GET /sessions/{id}/chats/{chatId}/messages/{msgId}/media", s.media)
+	mux.HandleFunc("DELETE /sessions/{id}/chats/{chatId}/messages/{msgId}", s.revoke)
 	mux.HandleFunc("POST /sessions/{id}/messages/send-text", s.sendText)
 
 	mux.HandleFunc("GET /events", s.events)

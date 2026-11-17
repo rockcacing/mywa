@@ -53,6 +53,8 @@ WhatsApp rotates it. Once you scan it, the page switches to your chats:
   Enter sends, Shift+Enter adds a new line.
 - Photos and stickers load as you scroll to them (click a photo to open it full size).
   Videos, GIFs and voice notes play inline when tapped; documents download.
+- Press and hold a message (or right-click it on desktop) for its menu: **Copy text**,
+  and on your own messages **Delete for everyone**, which asks for confirmation first.
 - The ⋮ menu has Disconnect and Log out.
 
 - Append `#key=<api key>` to the URL to skip the prompt. Browsers don't send the
@@ -114,6 +116,7 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 | GET | `/sessions/{id}/chats` | `?limit=50&offset=0` (max 200), sorted by most recent activity |
 | GET | `/sessions/{id}/chats/{chatId}/messages` | `?limit=50&before=<unix ts>`, newest first. To page back, pass the oldest `timestamp` you have as `before`. |
 | GET | `/sessions/{id}/chats/{chatId}/messages/{msgId}/media` | The attachment of an image, video, GIF, voice/audio, document or sticker message. `?thumb=1` returns its small embedded JPEG preview. Images, audio and video are served inline; everything else is sent as a download. `410 MEDIA_EXPIRED` means WhatsApp no longer has the file. |
+| DELETE | `/sessions/{id}/chats/{chatId}/messages/{msgId}` | Deletes one of your own messages for everyone (within 60 hours of sending, as in WhatsApp). Emits `message.revoked`. |
 | POST | `/sessions/{id}/messages/send-text` | `{"chatId", "text", "replyTo"?}`. `replyTo` is the id of a stored message in that chat. |
 
 `chatId` can be a phone number in international format (`6281234567890`,

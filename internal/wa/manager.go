@@ -295,3 +295,12 @@ func ParseChatID(s string) (types.JID, error) {
 }
 
 func nowUnix() int64 { return time.Now().Unix() }
+
+// Revoke deletes one of the session's own messages for everyone.
+func (m *Manager) Revoke(ctx context.Context, id, chatID, msgID string) (mystore.Message, error) {
+	s, err := m.get(id)
+	if err != nil {
+		return mystore.Message{}, err
+	}
+	return s.Revoke(ctx, chatID, msgID)
+}

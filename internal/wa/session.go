@@ -501,3 +501,43 @@ func (s *Session) canonicalChat(ctx context.Context, jid, alt types.JID) types.J
 	}
 	return jid
 }
+
+// RevokeWindow is how long after sending WhatsApp lets you delete a message for everyone.
+const RevokeWindow = 60 * time.Hour
+
+// Revoke deletes one of your own messages for everyone in the chat.
+func (s *Session) Revoke(ctx context.Context, chatID, msgID string) (mystore.Message, error) {
+	jid, err := ParseChatID(chatID)
+	if err != nil {
+		return mystore.Message{}, err
+	}
+	chat := s.canonicalChat(ctx, jid, types.EmptyJID)
+	m, err := s.m.db.GetMessage(ctx, s.id, chat.String(), msgID)
+	if errors.Is(err, mystore.ErrNotFound) {
+		return mystore.Message{}, fmt.Errorf("%w: message %q not found in this chat", ErrInvalid, msgID)
+	} else if err != nil {
+		return mystore.Message{}, err
+	}
+	if !m.FromMe {
+		return mystore.Message{}, fmt.Errorf("%w: only your own messages can be deleted for everyone", ErrInvalid)
+	}
+	if m.Type == mystore.TypeRevoked {
+		return m, nil
+	}
+	if time.Since(time.Unix(m.Timestamp, 0)) > RevokeWindow {
+		return mystore.Message{}, fmt.Errorf("%w: messages can only be deleted for everyone within %d hours of sending", ErrInvalid, int(RevokeWindow.Hours()))
+	}
+	cli, err := s.readyClient()
+	if err != nil {
+		return mystore.Message{}, err
+	}
+	if _, err := cli.SendMessage(ctx, chat, cli.BuildRevoke(chat, types.EmptyJID, msgID)); err != nil {
+		return mystore.Message{}, fmt.Errorf("%w: delete: %v", ErrUpstream, err)
+	}
+	if _, err := s.m.db.RevokeMessage(ctx, s.id, chat.String(), msgID); err != nil {
+		s.log.Error("store revoke", "err", err)
+	}
+	s.m.hub.Publish(s.id, hub.MessageRevoked, map[string]any{"chatId": chat.String(), "id": msgID})
+	m.Type, m.Text, m.Media = mystore.TypeRevoked, "", nil
+	return m, nil
+}

@@ -101,3 +101,13 @@ func (s *Server) media(w http.ResponseWriter, r *http.Request) {
 	h.Set("Content-Length", strconv.Itoa(len(m.Data)))
 	_, _ = w.Write(m.Data)
 }
+
+// revoke deletes one of your own messages for everyone in the chat.
+func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
+	msg, err := s.mgr.Revoke(r.Context(), r.PathValue("id"), r.PathValue("chatId"), r.PathValue("msgId"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, msg)
+}

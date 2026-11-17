@@ -109,6 +109,28 @@ func (f *fakeManager) Media(_ context.Context, id, chatID, msgID string, thumb b
 	return wa.Media{}, wa.ErrNoMedia
 }
 
+func (f *fakeManager) Revoke(_ context.Context, id, chatID, msgID string) (store.Message, error) {
+	if msgID == "theirs" {
+		return store.Message{}, wa.ErrInvalid
+	}
+	return store.Message{ID: msgID, ChatID: chatID, FromMe: true, Type: store.TypeRevoked}, nil
+}
+
+func TestRevoke(t *testing.T) {
+	ts, f, _ := newTestServer(t)
+	f.sessions["main"] = wa.Info{ID: "main"}
+	base := "/sessions/main/chats/1@s.whatsapp.net/messages/"
+	if resp, body := do(t, ts, "DELETE", base+"mine", "", true); resp.StatusCode != 200 || !strings.Contains(string(body), `"type":"revoked"`) {
+		t.Fatalf("revoke own: %d %s", resp.StatusCode, body)
+	}
+	if resp, _ := do(t, ts, "DELETE", base+"theirs", "", true); resp.StatusCode != 400 {
+		t.Fatalf("revoke other's: %d", resp.StatusCode)
+	}
+	if resp, _ := do(t, ts, "DELETE", base+"mine", "", false); resp.StatusCode != 401 {
+		t.Fatalf("revoke without key: %d", resp.StatusCode)
+	}
+}
+
 func TestMedia(t *testing.T) {
 	ts, f, _ := newTestServer(t)
 	f.sessions["main"] = wa.Info{ID: "main"}

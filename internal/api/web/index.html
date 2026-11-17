@@ -127,6 +127,22 @@
   .doc .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .doc .size { font-size: 12px; color: var(--muted); }
 
+  /* Message menu (press and hold / right-click) and confirmation dialog */
+  @media (hover: none) { .msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
+  .msg.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ctx-menu { position: fixed; z-index: 20; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; min-width: 200px; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+  .ctx-menu button { display: block; width: 100%; text-align: left; border: 0; background: none; font-weight: 500; padding: 10px 12px; }
+  .ctx-menu button:hover:not(:disabled) { background: var(--hover); }
+  .ctx-menu button.danger { color: var(--err); }
+  .ctx-menu .hint { font-size: 12px; color: var(--muted); padding: 2px 12px 8px; }
+  .backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 16px; }
+  .modal { background: var(--card); border-radius: 14px; padding: 22px 22px 16px; width: 100%; max-width: 380px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .modal h2 { margin: 0 0 8px; font-size: 18px; }
+  .modal p { margin: 0 0 16px; color: var(--muted); }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .modal button.danger { background: var(--err); border-color: var(--err); color: #fff; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 40; background: var(--text); color: var(--card); padding: 8px 14px; border-radius: 10px; font-size: 14px; }
+
   .composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--card); }
   .composer textarea { resize: none; max-height: 140px; padding: 9px 12px; line-height: 1.4; }
   .composer button { flex: none; }
@@ -211,6 +227,20 @@
     </div>
   </section>
 </div>
+
+<div class="ctx-menu" id="ctxMenu" role="menu" hidden></div>
+<div class="backdrop" id="confirmBox" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+    <h2 id="cTitle">Delete message?</h2>
+    <p id="cText">This message will be deleted for everyone in this chat.</p>
+    <p class="err" id="cErr" hidden></p>
+    <div class="actions">
+      <button id="cCancel" type="button">Cancel</button>
+      <button class="danger" id="cOk" type="button">Delete for everyone</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
 
 <script>
 (() => {
@@ -523,6 +553,7 @@
   }, { root: $("messages"), rootMargin: "400px 0px" });
 
   function clearMedia() {
+    if (typeof closeMenu === "function" && menuFor) closeMenu();
     io.disconnect();
     for (const u of blobs.values()) URL.revokeObjectURL(u);
     blobs.clear(); pending.clear(); nodes.clear(); queue.length = 0;
@@ -684,7 +715,9 @@
       b.append(who);
     }
     const media = mediaNode(m);
+    b.dataset.id = m.id;
     if (media) b.append(media);
+    else if (m.type === "revoked" && m.fromMe) b.append(el("div", "kind", "🚫 You deleted this message"));
     else if (m.type !== "text") b.append(el("div", "kind", KIND[m.type] || m.type));
     const showText = m.text && m.type !== "revoked" && !(m.type === "document" && m.media && m.text === m.media.fileName);
     if (showText) b.append(el("div", "text", m.text));
@@ -749,6 +782,132 @@
       if (meta) meta.replaceWith(metaNode(m));
     }
   }
+
+  // ---------- message menu: press and hold (touch) or right-click (mouse) ----------
+  const REVOKE_WINDOW = 60 * 3600; // seconds; matches the server's limit
+  let menuFor = null, pressTimer = null, pressStart = null, suppressClick = false, confirmFor = null;
+
+  function msgFromNode(node) {
+    const b = node && node.closest && node.closest(".msg");
+    return b ? msgs.find((m) => m.id === b.dataset.id) : null;
+  }
+  function canRevoke(m) {
+    return m.fromMe && m.type !== "revoked" && Date.now() / 1000 - m.timestamp < REVOKE_WINDOW;
+  }
+
+  function openMenu(m, x, y) {
+    if (menuFor === m) return;
+    closeMenu();
+    const menu = $("ctxMenu");
+    menu.replaceChildren();
+    if (m.text && m.type !== "revoked") {
+      const copy = el("button", null, "Copy text"); copy.type = "button"; copy.setAttribute("role", "menuitem");
+      copy.onclick = () => {
+        closeMenu();
+        navigator.clipboard.writeText(m.text).then(() => toast("Copied"), () => toast("Couldn't copy"));
+      };
+      menu.append(copy);
+    }
+    if (m.fromMe && m.type !== "revoked") {
+      const del = el("button", "danger", "Delete for everyone"); del.type = "button"; del.setAttribute("role", "menuitem");
+      if (canRevoke(m)) del.onclick = () => { closeMenu(); askDelete(m); };
+      else { del.disabled = true; menu.append(del, el("div", "hint", "Only possible within 60 hours of sending")); }
+      if (!del.disabled) menu.append(del);
+    }
+    if (!menu.children.length) return;
+    menuFor = m;
+    const node = nodes.get(m.id);
+    if (node) node.classList.add("selected");
+    menu.hidden = false;
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + "px";
+    menu.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + "px";
+    const first = menu.querySelector("button:not(:disabled)");
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function closeMenu() {
+    if (!menuFor) return;
+    const node = nodes.get(menuFor.id);
+    if (node) node.classList.remove("selected");
+    menuFor = null;
+    $("ctxMenu").hidden = true;
+  }
+
+  function askDelete(m) {
+    confirmFor = m;
+    $("cText").textContent = "This message will be deleted for everyone in this chat. They may already have seen it.";
+    $("cErr").hidden = true;
+    $("cOk").disabled = false; $("cOk").textContent = "Delete for everyone";
+    $("confirmBox").hidden = false;
+    $("cCancel").focus();
+  }
+  function closeConfirm() { confirmFor = null; $("confirmBox").hidden = true; }
+
+  async function doDelete() {
+    const m = confirmFor;
+    if (!m) return;
+    $("cOk").disabled = true; $("cOk").textContent = "Deleting…"; $("cErr").hidden = true;
+    try {
+      const res = await api("DELETE", `/sessions/${S}/chats/${encodeURIComponent(m.chatId)}/messages/${encodeURIComponent(m.id)}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || res.statusText);
+      patchMessages(m.chatId, (x) => x.id === m.id && (x.type = "revoked", x.text = "", x.media = null, true));
+      refreshChatsSoon();
+      closeConfirm();
+      toast("Message deleted");
+    } catch (e) {
+      if (e.message === "unauthorized") return;
+      $("cErr").textContent = e.message; $("cErr").hidden = false;
+      $("cOk").disabled = false; $("cOk").textContent = "Try again";
+    }
+  }
+
+  let toastTimer = null;
+  function toast(text) {
+    $("toast").textContent = text; $("toast").hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => ($("toast").hidden = true), 2000);
+  }
+
+  const msgBox = $("messages");
+  msgBox.addEventListener("contextmenu", (e) => {
+    const m = msgFromNode(e.target);
+    if (!m) return;
+    e.preventDefault();
+    clearTimeout(pressTimer);
+    openMenu(m, e.clientX, e.clientY);
+  });
+  msgBox.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return; // mouse users right-click
+    const m = msgFromNode(e.target);
+    if (!m) return;
+    pressStart = { x: e.clientX, y: e.clientY };
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      suppressClick = true;
+      if (navigator.vibrate) navigator.vibrate(25);
+      openMenu(m, pressStart.x, pressStart.y);
+    }, 500);
+  });
+  const cancelPress = () => clearTimeout(pressTimer);
+  msgBox.addEventListener("pointerup", cancelPress);
+  msgBox.addEventListener("pointercancel", cancelPress);
+  msgBox.addEventListener("pointermove", (e) => {
+    if (pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 10) cancelPress();
+  });
+  // The tap that ends a long press must not also open a photo or start a video.
+  msgBox.addEventListener("click", (e) => {
+    if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  msgBox.addEventListener("scroll", closeMenu);
+  document.addEventListener("pointerdown", (e) => { if (menuFor && !$("ctxMenu").contains(e.target)) closeMenu(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!$("confirmBox").hidden) closeConfirm(); else closeMenu();
+  });
+  $("cCancel").onclick = closeConfirm;
+  $("cOk").onclick = doDelete;
+  $("confirmBox").addEventListener("click", (e) => { if (e.target === $("confirmBox")) closeConfirm(); });
 
   // ---------- sending ----------
   function autoGrow() {
