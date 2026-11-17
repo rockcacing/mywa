@@ -161,6 +161,17 @@
   .composer textarea { resize: none; max-height: 140px; padding: 9px 12px; line-height: 1.4; }
   .composer button { flex: none; }
   .send-err { padding: 6px 16px; font-size: 13px; background: var(--card); }
+  .composer .attach { flex: none; font-size: 20px; padding: 6px 10px; }
+  .attach-bar { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--card); }
+  .attach-bar .preview { width: 56px; height: 56px; border-radius: 8px; flex: none; display: grid; place-items: center; font-size: 26px; background: var(--hover); overflow: hidden; }
+  .attach-bar .preview img { width: 100%; height: 100%; object-fit: cover; }
+  .attach-bar .info { flex: 1; min-width: 0; }
+  .attach-bar .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .attach-bar .sub { font-size: 13px; color: var(--muted); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .attach-bar label { display: inline-flex; gap: 6px; align-items: center; font-weight: 400; margin: 0; cursor: pointer; }
+  .attach-bar input[type=checkbox] { width: auto; }
+  .attach-bar progress { width: 100%; height: 6px; margin-top: 6px; }
+  .chat-drop { outline: 3px dashed var(--accent); outline-offset: -8px; }
 </style>
 </head>
 <body>
@@ -239,7 +250,19 @@
       </header>
       <div class="messages" id="messages"></div>
       <div class="send-err err" id="sendErr" hidden></div>
+      <div class="attach-bar" id="attachBar" hidden>
+        <div class="preview" id="attachPreview"></div>
+        <div class="info">
+          <div class="name" id="attachName"></div>
+          <div class="sub"><span id="attachSize"></span>
+            <label id="asDocLabel"><input type="checkbox" id="asDoc"> Send as file</label></div>
+          <progress id="attachProgress" max="100" value="0" hidden></progress>
+        </div>
+        <button class="link" id="attachRemove" type="button" aria-label="Remove attachment">✕</button>
+      </div>
       <form class="composer" id="composer">
+        <button class="link attach" id="attachBtn" type="button" aria-label="Attach a photo or file" title="Attach a photo or file">📎</button>
+        <input type="file" id="filePick" hidden>
         <textarea id="draft" rows="1" placeholder="Type a message" aria-label="Message" maxlength="65536"></textarea>
         <button class="primary" id="sendBtn" type="submit">Send</button>
       </form>
@@ -550,6 +573,7 @@
     $("noChat").hidden = true; $("chatPane").hidden = false;
     $("appView").classList.add("chat-open");
     $("sendErr").hidden = true; $("draft").value = ""; autoGrow();
+    clearAttachment();
     $("messages").replaceChildren(el("div", "empty", "Loading messages…"));
     // One history entry per open chat, so Back returns to the list on phones.
     if (wasOpen) history.replaceState({ chat: c.id }, ""); else history.pushState({ chat: c.id }, "");
@@ -1042,8 +1066,79 @@
     t.style.height = Math.min(t.scrollHeight + 2, 140) + "px";
   }
 
+  // ---------- attachments ----------
+  const MAX_UPLOAD = 100 * 1024 * 1024; // matches the server's limit
+  let attachment = null, attachURL = null;
+
+  function fileIcon(type) {
+    if (type.startsWith("image/")) return "🖼";
+    if (type.startsWith("video/")) return "🎥";
+    if (type.startsWith("audio/")) return "🎵";
+    return "📄";
+  }
+
+  function setAttachment(file) {
+    clearAttachment();
+    if (!file || !current) return;
+    if (file.size > MAX_UPLOAD) { toast("Files can be at most 100 MB"); return; }
+    attachment = file;
+    const pv = $("attachPreview");
+    if (/^image\/(jpeg|png|gif|webp)$/.test(file.type)) {
+      attachURL = URL.createObjectURL(file);
+      const img = el("img"); img.alt = ""; img.src = attachURL;
+      pv.replaceChildren(img);
+    } else pv.replaceChildren(document.createTextNode(fileIcon(file.type || "")));
+    $("attachName").textContent = file.name || "Pasted image";
+    $("attachSize").textContent = fmtSize(file.size);
+    // Only photos and videos have a choice; everything else is sent as a file anyway.
+    $("asDocLabel").hidden = !/^(image\/(jpeg|png)|video\/(mp4|3gpp))$/.test(file.type);
+    $("asDoc").checked = false;
+    $("attachProgress").hidden = true;
+    $("attachBar").hidden = false;
+    $("draft").placeholder = "Add a caption…";
+    $("draft").focus();
+  }
+
+  function clearAttachment() {
+    attachment = null;
+    if (attachURL) { URL.revokeObjectURL(attachURL); attachURL = null; }
+    $("attachBar").hidden = true;
+    $("attachPreview").replaceChildren();
+    $("draft").placeholder = "Type a message";
+    $("filePick").value = "";
+  }
+
+  // XMLHttpRequest instead of fetch so the upload can report progress.
+  function upload(chat, file, caption, asDocument) {
+    return new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append("chatId", chat.id);
+      fd.append("caption", caption);
+      if (asDocument) fd.append("asDocument", "true");
+      fd.append("file", file, file.name || "image.png");
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/sessions/${S}/messages/send-media`);
+      xhr.setRequestHeader("X-API-Key", key);
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        $("attachProgress").hidden = false;
+        $("attachProgress").value = Math.round(100 * e.loaded / e.total);
+      };
+      xhr.onload = () => {
+        if (xhr.status === 401) { forget("That API key was not accepted."); return reject(new Error("unauthorized")); }
+        let body = {};
+        try { body = JSON.parse(xhr.responseText); } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+        else reject(new Error(body.error || xhr.statusText || "upload failed"));
+      };
+      xhr.onerror = () => reject(new Error("network error"));
+      xhr.send(fd);
+    });
+  }
+
   async function send() {
     const text = $("draft").value;
+    if (attachment) return sendAttachment(text);
     if (!current || sending || !text.trim()) return;
     sending = true; $("sendBtn").disabled = true; $("sendErr").hidden = true;
     const chat = current;
@@ -1057,6 +1152,30 @@
       if (e.message !== "unauthorized" && current === chat) { $("sendErr").textContent = "Not sent: " + e.message; $("sendErr").hidden = false; }
     } finally {
       sending = false;
+      $("sendBtn").disabled = !info || info.status !== "ready";
+      if (current === chat) $("draft").focus();
+    }
+  }
+
+  async function sendAttachment(caption) {
+    if (!current || sending) return;
+    const chat = current, file = attachment;
+    sending = true; $("sendBtn").disabled = true; $("sendErr").hidden = true;
+    $("attachRemove").disabled = true;
+    $("sendBtn").textContent = "Sending…";
+    try {
+      const body = await upload(chat, file, caption, $("asDoc").checked);
+      if (current === chat && attachment === file) { clearAttachment(); $("draft").value = ""; autoGrow(); }
+      addMessage(body, true);
+    } catch (e) {
+      if (e.message !== "unauthorized" && current === chat) {
+        $("sendErr").textContent = "Not sent: " + e.message; $("sendErr").hidden = false;
+        $("attachProgress").hidden = true;
+      }
+    } finally {
+      sending = false;
+      $("sendBtn").textContent = "Send";
+      $("attachRemove").disabled = false;
       $("sendBtn").disabled = !info || info.status !== "ready";
       if (current === chat) $("draft").focus();
     }
@@ -1137,6 +1256,26 @@
   $("archBack").onclick = () => setArchivedMode(false);
   $("messages").addEventListener("scroll", () => { if ($("messages").scrollTop < 40) loadOlder(false); });
   $("composer").onsubmit = (e) => { e.preventDefault(); send(); };
+  $("attachBtn").onclick = () => $("filePick").click();
+  $("filePick").onchange = () => setAttachment($("filePick").files[0]);
+  $("attachRemove").onclick = () => { clearAttachment(); $("draft").focus(); };
+  // Paste an image (e.g. a screenshot) into the message box to attach it.
+  $("draft").addEventListener("paste", (e) => {
+    const f = [...(e.clipboardData ? e.clipboardData.files : [])][0];
+    if (f) { e.preventDefault(); setAttachment(f); }
+  });
+  // Drop a file anywhere on the open chat.
+  const pane = $("chatPane");
+  pane.addEventListener("dragover", (e) => {
+    if (!current || !e.dataTransfer || ![...e.dataTransfer.types].includes("Files")) return;
+    e.preventDefault(); pane.classList.add("chat-drop");
+  });
+  pane.addEventListener("dragleave", (e) => { if (e.target === pane || !pane.contains(e.relatedTarget)) pane.classList.remove("chat-drop"); });
+  pane.addEventListener("drop", (e) => {
+    pane.classList.remove("chat-drop");
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) { e.preventDefault(); setAttachment(f); }
+  });
   $("draft").addEventListener("input", autoGrow);
   $("draft").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }

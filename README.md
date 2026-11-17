@@ -59,6 +59,9 @@ WhatsApp rotates it. Once you scan it, the page switches to your chats:
   Videos, GIFs and voice notes play inline when tapped; documents download.
 - Press and hold a message (or right-click it on desktop) for its menu: **Copy text**,
   and on your own messages **Delete for everyone**, which asks for confirmation first.
+- 📎 next to the message box attaches a photo, video, audio file or document (up to 100 MB);
+  the text box becomes its caption. You can also paste an image or drop a file onto the
+  chat. Photos and videos can be sent "as file" to keep their full quality.
 - The ⋮ menu has Disconnect and Log out.
 
 - Append `#key=<api key>` to the URL to skip the prompt. Browsers don't send the
@@ -124,6 +127,7 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 | DELETE | `/sessions/{id}/chats/{chatId}/messages/{msgId}` | Deletes one of your own messages for everyone (within 60 hours of sending, as in WhatsApp). Emits `message.revoked`. |
 | POST | `/sessions/{id}/chats/{chatId}/archive` · `/unarchive` | Archives or unarchives the chat on your account (all devices). Archiving also unpins. Returns `{chatId, archived, pinned}`. |
 | POST | `/sessions/{id}/chats/{chatId}/pin` · `/unpin` | Pins or unpins the chat. At most 3 pinned chats; archived chats can't be pinned. |
+| POST | `/sessions/{id}/messages/send-media` | `multipart/form-data`: `chatId`, `file` (max 100 MB), optional `caption`, optional `asDocument=true`. JPEG/PNG go as photos (with a generated preview), MP4/3GP as videos, audio files as audio, everything else as a document. Returns the message. |
 | POST | `/sessions/{id}/messages/send-text` | `{"chatId", "text", "replyTo"?}`. `replyTo` is the id of a stored message in that chat. |
 
 `chatId` can be a phone number in international format (`6281234567890`,
@@ -237,5 +241,5 @@ with an "outdated" error.
 
 ## Not in v1
 
-Media sending, groups management, reactions, webhooks and the
+Groups management, reactions, webhooks and the
 dashboard. See [PLAN.md](PLAN.md).

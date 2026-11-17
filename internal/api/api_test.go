@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -130,6 +131,41 @@ func (f *fakeManager) SetChatPinned(_ context.Context, id, chatID string, pin bo
 		return wa.ChatFlags{}, wa.ErrInvalid
 	}
 	return wa.ChatFlags{ChatID: chatID, Pinned: pin}, nil
+}
+
+func (f *fakeManager) SendMedia(_ context.Context, id string, req wa.SendMediaRequest) (store.Message, error) {
+	if len(req.Data) == 0 {
+		return store.Message{}, wa.ErrInvalid
+	}
+	return store.Message{ID: "M1", ChatID: req.ChatID, FromMe: true, Type: "document",
+		Text: req.Caption + "|" + req.FileName + "|" + string(req.Data)}, nil
+}
+
+func TestSendMedia(t *testing.T) {
+	ts, f, _ := newTestServer(t)
+	f.sessions["main"] = wa.Info{ID: "main"}
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("chatId", "628123456")
+	_ = mw.WriteField("caption", "hi")
+	fw, _ := mw.CreateFormFile("file", "note.txt")
+	_, _ = fw.Write([]byte("hello"))
+	_ = mw.Close()
+	req, _ := http.NewRequest("POST", ts.URL+"/sessions/main/messages/send-media", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("X-API-Key", testKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(b), `hi|note.txt|hello`) {
+		t.Fatalf("send-media: %d %s", resp.StatusCode, b)
+	}
+	if resp, _ := do(t, ts, "POST", "/sessions/main/messages/send-media", `{"chatId":"1"}`, true); resp.StatusCode != 400 {
+		t.Fatalf("json body: %d", resp.StatusCode)
+	}
 }
 
 func TestChatActions(t *testing.T) {

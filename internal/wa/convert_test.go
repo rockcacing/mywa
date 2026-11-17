@@ -1,7 +1,11 @@
 package wa
 
 import (
+	"bytes"
 	"errors"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"testing"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -102,5 +106,49 @@ func TestMediaPart(t *testing.T) {
 		if SafeInlineType(mt) != ok {
 			t.Errorf("SafeInlineType(%q) = %v", mt, !ok)
 		}
+	}
+}
+
+func TestClassify(t *testing.T) {
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 32)...)
+	jpg := append([]byte{0xff, 0xd8, 0xff, 0xe0}, make([]byte, 32)...)
+	mp4 := append([]byte{0, 0, 0, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}, make([]byte, 32)...)
+	pdf := []byte("%PDF-1.7 ...")
+	cases := []struct {
+		name string
+		req  SendMediaRequest
+		kind sendKind
+		mime string
+	}{
+		{"jpeg", SendMediaRequest{Data: jpg, FileName: "a.jpg"}, kindImage, "image/jpeg"},
+		{"png with wrong client type", SendMediaRequest{Data: png, Mimetype: "application/octet-stream"}, kindImage, "image/png"},
+		{"photo as document", SendMediaRequest{Data: jpg, FileName: "a.jpg", AsDocument: true}, kindDocument, "image/jpeg"},
+		{"mp4", SendMediaRequest{Data: mp4, FileName: "v.mp4"}, kindVideo, "video/mp4"},
+		{"pdf", SendMediaRequest{Data: pdf, FileName: "x.pdf"}, kindDocument, "application/pdf"},
+		{"gif stays a file", SendMediaRequest{Data: []byte("GIF89a......"), FileName: "a.gif"}, kindDocument, "image/gif"},
+		{"mp3", SendMediaRequest{Data: []byte("ID3......"), FileName: "s.mp3", Mimetype: "audio/mpeg"}, kindAudio, "audio/mpeg"},
+		{"html is never inline", SendMediaRequest{Data: []byte("<html><script>"), FileName: "x.html"}, kindDocument, "text/html"},
+	}
+	for _, c := range cases {
+		k, mt := classify(c.req)
+		if k != c.kind || mt != c.mime {
+			t.Errorf("%s: classify = %v %q, want %v %q", c.name, k, mt, c.kind, c.mime)
+		}
+	}
+}
+
+func TestImageInfoThumbnail(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 400, 200))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	w, h, thumb := imageInfo(buf.Bytes())
+	if w != 400 || h != 200 || len(thumb) == 0 {
+		t.Fatalf("imageInfo = %d×%d, %d-byte thumb", w, h, len(thumb))
+	}
+	cfg, err := jpeg.DecodeConfig(bytes.NewReader(thumb))
+	if err != nil || cfg.Width != 72 || cfg.Height != 36 {
+		t.Fatalf("thumb = %+v, %v", cfg, err)
 	}
 }

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"strconv"
@@ -150,4 +152,48 @@ func (s *Server) chatAction(archive, on bool) http.HandlerFunc {
 		}
 		writeJSON(w, http.StatusOK, res)
 	}
+}
+
+// sendMedia takes multipart/form-data: chatId, file, and optionally caption and
+// asDocument=true (send a photo or video as a file instead).
+func (s *Server) sendMedia(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, wa.MaxMediaBytes+1<<20)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			s.fail(w, r, wa.ErrTooLarge)
+			return
+		}
+		s.fail(w, r, fmt.Errorf("%w: expected multipart/form-data with a file field: %v", wa.ErrInvalid, err))
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
+	f, hdr, err := r.FormFile("file")
+	if err != nil {
+		s.fail(w, r, fmt.Errorf("%w: file is required", wa.ErrInvalid))
+		return
+	}
+	defer f.Close()
+	if hdr.Size > wa.MaxMediaBytes {
+		s.fail(w, r, wa.ErrTooLarge)
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, wa.MaxMediaBytes+1))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	msg, err := s.mgr.SendMedia(r.Context(), r.PathValue("id"), wa.SendMediaRequest{
+		ChatID:     r.FormValue("chatId"),
+		Caption:    r.FormValue("caption"),
+		FileName:   hdr.Filename,
+		Mimetype:   hdr.Header.Get("Content-Type"),
+		Data:       data,
+		AsDocument: r.FormValue("asDocument") == "true",
+	})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, msg)
 }
