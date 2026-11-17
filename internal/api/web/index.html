@@ -134,7 +134,15 @@
   .doc .size { font-size: 12px; color: var(--muted); }
 
   /* Message menu (press and hold / right-click) and confirmation dialog */
-  @media (hover: none) { .msg, .chat { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; } }
+  /* Press-and-hold opens our menus, so the browser's own text selection and callout must
+     not start there. Chat rows, menus and buttons never need selecting; message text stays
+     selectable with a mouse but not on touch screens, where "Copy text" is in the menu. */
+  .chat, .ctx-menu, .menu-list, .listbar, header, button, .modal .actions {
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  @media (hover: none), (pointer: coarse) {
+    .msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  }
   .msg.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
   .ctx-menu { position: fixed; z-index: 20; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; min-width: 200px; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
   .ctx-menu button { display: block; width: 100%; text-align: left; border: 0; background: none; font-weight: 500; padding: 10px 12px; }
@@ -965,7 +973,8 @@
   // Press and hold (touch) or right-click (mouse) on an item of `container` opens its menu.
   // find(target) returns a function (x, y) that opens the menu, or null.
   function bindMenu(container, find) {
-    let timer = null, start = null, suppress = false;
+    let timer = null, start = null, suppress = false, lastPointer = "";
+    container.addEventListener("pointerdown", (e) => { lastPointer = e.pointerType; }, true);
     const cancel = () => clearTimeout(timer);
     container.addEventListener("contextmenu", (e) => {
       const open = find(e.target);
@@ -974,6 +983,7 @@
       open(e.clientX, e.clientY);
     });
     container.addEventListener("pointerdown", (e) => {
+      suppress = false; // a new press: only a click that ends *this* long press is swallowed
       if (e.pointerType === "mouse") return; // mouse users right-click
       const open = find(e.target);
       if (!open) return;
@@ -981,10 +991,14 @@
       cancel();
       timer = setTimeout(() => {
         suppress = true;
+        const sel = window.getSelection && window.getSelection();
+        if (sel) sel.removeAllRanges(); // drop any selection the long press began
         if (navigator.vibrate) navigator.vibrate(25);
         open(start.x, start.y);
       }, 500);
     });
+    // Touch long presses must not start a native text selection on these items.
+    container.addEventListener("selectstart", (e) => { if (lastPointer === "touch" && find(e.target)) e.preventDefault(); });
     container.addEventListener("pointerup", cancel);
     container.addEventListener("pointercancel", cancel);
     container.addEventListener("pointermove", (e) => {
@@ -1004,6 +1018,8 @@
     const c = row && chats.find((x) => x.id === row.dataset.id);
     return c && ((x, y) => openChatMenu(c, x, y, row));
   });
+  $("ctxMenu").addEventListener("selectstart", (e) => e.preventDefault());
+  $("ctxMenu").addEventListener("contextmenu", (e) => e.preventDefault());
   $("chatMenuBtn").onclick = (e) => {
     e.stopPropagation();
     if (!current) return;
