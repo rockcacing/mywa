@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -205,4 +206,83 @@ func SafeInlineType(mime string) bool {
 		return true
 	}
 	return strings.HasPrefix(base, "video/") || strings.HasPrefix(base, "audio/")
+}
+
+// ErrReloadTimeout means the phone did not re-send the message in time.
+var ErrReloadTimeout = errors.New("your phone didn't send the message again in time; make sure it is online and try again")
+
+// reloadWait is how long ReloadMedia waits for the phone's answer.
+var reloadWait = 30 * time.Second
+
+// ReloadMedia makes an older media message downloadable again. Messages stored before
+// mywa kept download details can't be fetched; this asks the phone to re-send the 50
+// messages up to and including this one (an on-demand history sync), which fills in
+// the details for every attachment in that range. It waits for the answer and returns
+// the updated message.
+func (s *Session) ReloadMedia(ctx context.Context, chatID, msgID string) (mystore.Message, error) {
+	jid, err := ParseChatID(chatID)
+	if err != nil {
+		return mystore.Message{}, err
+	}
+	chat := s.canonicalChat(ctx, jid, types.EmptyJID)
+	m, err := s.m.db.GetMessage(ctx, s.id, chat.String(), msgID)
+	if errors.Is(err, mystore.ErrNotFound) {
+		return m, fmt.Errorf("%w: message %q not found in this chat", ErrInvalid, msgID)
+	} else if err != nil {
+		return m, err
+	}
+	if m.Media != nil {
+		return m, nil // already downloadable
+	}
+	switch m.Type {
+	case TypeImage, TypeVideo, TypeGIF, TypeAudio, TypeVoice, TypeDocument, TypeSticker:
+	default:
+		return m, fmt.Errorf("%w: this message has no attachment", ErrInvalid)
+	}
+	cli, err := s.readyClient()
+	if err != nil {
+		return m, err
+	}
+	// The phone answers with the messages *before* the one we name, so name the next one.
+	next, err := s.m.db.NextMessage(ctx, s.id, chat.String(), msgID)
+	if errors.Is(err, mystore.ErrNotFound) {
+		return m, fmt.Errorf("%w: this is the newest message in the chat; it can be reloaded once another message arrives", ErrInvalid)
+	} else if err != nil {
+		return m, err
+	}
+	anchor := &types.MessageInfo{
+		MessageSource: types.MessageSource{Chat: chat, IsFromMe: next.FromMe, IsGroup: chat.Server == types.GroupServer},
+		ID:            next.ID,
+		Timestamp:     time.Unix(next.Timestamp, 0),
+	}
+	if _, err := cli.SendPeerMessage(ctx, cli.BuildHistorySyncRequest(anchor, 50)); err != nil {
+		return m, fmt.Errorf("%w: ask phone: %v", ErrUpstream, err)
+	}
+	s.log.Info("requested message history for media reload", "chat", chat.String(), "before", next.ID)
+
+	deadline := time.NewTimer(reloadWait)
+	defer deadline.Stop()
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return m, ctx.Err()
+		case <-deadline.C:
+			return m, ErrReloadTimeout
+		case <-tick.C:
+			if got, err := s.m.db.GetMessage(ctx, s.id, chat.String(), msgID); err == nil && got.Media != nil {
+				return got, nil
+			}
+		}
+	}
+}
+
+// ReloadMedia asks the phone to re-send an older media message; see Session.ReloadMedia.
+func (m *Manager) ReloadMedia(ctx context.Context, id, chatID, msgID string) (mystore.Message, error) {
+	s, err := m.get(id)
+	if err != nil {
+		return mystore.Message{}, err
+	}
+	return s.ReloadMedia(ctx, chatID, msgID)
 }

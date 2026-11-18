@@ -118,6 +118,9 @@
   .msg .sender { font-size: 12px; font-weight: 700; margin-bottom: 1px; }
   .msg .text { white-space: pre-wrap; }
   .msg .kind { font-style: italic; color: var(--muted); }
+  .msg .reload-hint { font-size: 12px; color: var(--muted); }
+  .msg .reload-status { font-size: 13px; color: var(--accent); margin-top: 2px; }
+  .msg .reload-status.err { color: var(--err); }
   .msg .meta { font-size: 11px; color: var(--muted); text-align: right; margin-top: 2px; white-space: nowrap; }
   .msg .tick.read { color: var(--tick-read); }
   .msg.has-media { padding: 4px 4px 4px; }
@@ -820,7 +823,10 @@
     b.dataset.id = m.id;
     if (media) b.append(media);
     else if (m.type === "revoked" && m.fromMe) b.append(el("div", "kind", "🚫 You deleted this message"));
-    else if (m.type !== "text") b.append(el("div", "kind", KIND[m.type] || m.type));
+    else if (m.type !== "text") {
+      b.append(el("div", "kind", KIND[m.type] || m.type));
+      if (canReload(m)) b.append(el("div", "reload-hint", "↻ Press and hold to reload"));
+    }
     const showText = m.text && m.type !== "revoked" && !(m.type === "document" && m.media && m.text === m.media.fileName);
     if (showText) b.append(el("div", "text", m.text));
     b.append(metaNode(m));
@@ -933,12 +939,45 @@
     const items = [];
     if (m.text && m.type !== "revoked") items.push({ label: "Copy text", run: () =>
       navigator.clipboard.writeText(m.text).then(() => toast("Copied"), () => toast("Couldn't copy")) });
+    if (canReload(m)) items.push({ label: RELOAD_LABEL[m.type], run: () => reloadMedia(m) });
     if (m.fromMe && m.type !== "revoked") {
       items.push(canRevoke(m)
         ? { label: "Delete for everyone", danger: true, run: () => askDelete(m) }
         : { label: "Delete for everyone", danger: true, disabled: true, hint: "Only possible within 60 hours of sending" });
     }
     showMenu("m:" + m.id, items, x, y, nodes.get(m.id));
+  }
+
+  // ---------- reload older media ----------
+  // Messages stored before mywa kept download details show only a label; the phone can
+  // re-send them (with up to 49 earlier ones), which makes them viewable again.
+  const RELOAD_LABEL = { image: "Reload image", video: "Reload video", gif: "Reload GIF", sticker: "Reload sticker",
+    audio: "Reload audio", voice: "Reload voice message", document: "Reload document" };
+  const reloading = new Set();
+  function canReload(m) { return !m.media && RELOAD_LABEL[m.type] && !reloading.has(m.id); }
+
+  async function reloadMedia(m) {
+    const node = nodes.get(m.id);
+    const status = el("div", "reload-status", "Loading from your phone…");
+    if (node) {
+      node.querySelectorAll(":scope > .reload-hint, :scope > .reload-status").forEach((e) => e.remove());
+      node.querySelector(":scope > .meta").before(status);
+    }
+    reloading.add(m.id);
+    try {
+      const res = await api("POST", `/sessions/${S}/chats/${encodeURIComponent(m.chatId)}/messages/${encodeURIComponent(m.id)}/reload-media`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || res.statusText);
+      reloading.delete(m.id);
+      // Usually already applied by the message.media event; this covers a missed one.
+      patchMessages(m.chatId, (x) => x.id === m.id && !x.media && body.media && (x.media = body.media, true));
+    } catch (e) {
+      reloading.delete(m.id);
+      if (e.message === "unauthorized") return;
+      status.textContent = "⚠ " + e.message;
+      status.classList.add("err");
+      setTimeout(() => { if (status.isConnected) { status.remove(); patchMessages(m.chatId, (x) => x.id === m.id && !x.media); } }, 6000);
+    }
   }
 
   // ---------- chat menu: pin and archive ----------
@@ -1215,6 +1254,9 @@
         case "message.edited":
           patchMessages(d.chatId, (m) => m.id === d.id && (m.text = d.text, m.edited = true, true));
           refreshChatsSoon(); break;
+        case "message.media": // an older attachment became downloadable (e.g. after a reload)
+          patchMessages(d.chatId, (m) => m.id === d.id && !m.media && (m.media = d.media, reloading.delete(m.id), true));
+          break;
         case "message.revoked":
           patchMessages(d.chatId, (m) => m.id === d.id && (m.type = "revoked", m.text = "", true));
           refreshChatsSoon(); break;

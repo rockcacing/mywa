@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,6 +32,9 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 // fail maps manager errors to HTTP responses.
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, context.Canceled) && r.Context().Err() != nil:
+		// The client went away (closed the page, cancelled the request); nothing to report.
+		w.WriteHeader(499)
 	case errors.Is(err, wa.ErrNotFound):
 		writeError(w, http.StatusNotFound, "SESSION_NOT_FOUND", err.Error())
 	case errors.Is(err, wa.ErrExists):
@@ -49,6 +53,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusGone, "MEDIA_EXPIRED", err.Error())
 	case errors.Is(err, wa.ErrTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "MEDIA_TOO_LARGE", err.Error())
+	case errors.Is(err, wa.ErrReloadTimeout):
+		writeError(w, http.StatusGatewayTimeout, "RELOAD_TIMEOUT", err.Error())
 	case errors.Is(err, wa.ErrUpstream):
 		writeError(w, http.StatusBadGateway, "WHATSAPP_ERROR", err.Error())
 	default:

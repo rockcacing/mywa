@@ -80,17 +80,7 @@ func (s *Store) SaveMessage(ctx context.Context, sessionID string, m Message, co
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// Already stored. A later copy (e.g. from a history sync) may carry download
-		// details the first one lacked; keep them without touching anything else.
-		if len(m.MediaBlob) > 0 {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE messages SET media = ?, media_info = ?
-				WHERE session_id = ? AND chat_jid = ? AND id = ? AND media IS NULL`,
-				m.MediaBlob, mediaInfoJSON(m.Media), sessionID, m.ChatID, m.ID); err != nil {
-				return false, err
-			}
-		}
-		return false, tx.Commit()
+		return false, tx.Commit() // already stored; see FillMedia for late download details
 	}
 
 	unread := 0
@@ -251,6 +241,40 @@ func scanMessage(r scanner) (Message, error) {
 		if json.Unmarshal([]byte(info), &mi) == nil {
 			m.Media = &mi
 		}
+	}
+	return m, err
+}
+
+// FillMedia adds download details to a stored message that has none, e.g. when a
+// history sync re-sends a message stored before mywa kept them. It reports whether the
+// message changed.
+func (s *Store) FillMedia(ctx context.Context, sessionID string, m Message) (bool, error) {
+	if len(m.MediaBlob) == 0 {
+		return false, nil
+	}
+	res, err := s.DB.ExecContext(ctx, `
+		UPDATE messages SET media = ?, media_info = ?
+		WHERE session_id = ? AND chat_jid = ? AND id = ? AND media IS NULL AND type <> ?`,
+		m.MediaBlob, mediaInfoJSON(m.Media), sessionID, m.ChatID, m.ID, TypeRevoked)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// NextMessage returns the message stored right after the given one in its chat (by time,
+// then arrival order), or ErrNotFound when it is the newest.
+func (s *Store) NextMessage(ctx context.Context, sessionID, chatJID, id string) (Message, error) {
+	row := s.DB.QueryRowContext(ctx, `
+		WITH cur AS (SELECT ts AS cur_ts, rowid AS cur_rid FROM messages WHERE session_id = ? AND chat_jid = ? AND id = ?)
+		SELECT `+messageCols+` FROM messages, cur
+		WHERE session_id = ? AND chat_jid = ? AND (ts > cur_ts OR (ts = cur_ts AND messages.rowid > cur_rid))
+		ORDER BY ts, messages.rowid LIMIT 1`,
+		sessionID, chatJID, id, sessionID, chatJID)
+	m, err := scanMessage(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return m, ErrNotFound
 	}
 	return m, err
 }

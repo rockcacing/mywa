@@ -8,6 +8,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/proto/waHistorySync"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
@@ -221,7 +222,17 @@ func (s *Session) onMessage(ctx context.Context, cli *whatsmeow.Client, e *event
 		s.log.Error("store message", "err", err, "id", m.ID)
 		return
 	}
-	if !inserted || !live {
+	if !inserted {
+		// A re-sent copy (history sync, or a reload the user asked for) may carry the
+		// download details that the stored one lacks.
+		if added, err := s.m.db.FillMedia(ctx, s.id, m); err != nil {
+			s.log.Error("fill media", "err", err, "id", m.ID)
+		} else if added {
+			s.m.hub.Publish(s.id, hub.MessageMedia, map[string]any{"chatId": m.ChatID, "id": m.ID, "media": m.Media})
+		}
+		return
+	}
+	if !live {
 		return
 	}
 	pushName := ""
@@ -302,6 +313,7 @@ func (s *Session) onHistorySync(cli *whatsmeow.Client, e *events.HistorySync) {
 	defer s.historyMu.Unlock()
 	ctx := context.Background()
 	convs := e.Data.GetConversations()
+	onDemand := e.Data.GetSyncType() == waHistorySync.HistorySync_ON_DEMAND
 	nMsgs := 0
 	for _, conv := range convs {
 		if !s.isCurrent(cli) {
@@ -312,6 +324,17 @@ func (s *Session) onHistorySync(cli *whatsmeow.Client, e *events.HistorySync) {
 			continue
 		}
 		chat := s.canonicalChat(ctx, raw, types.EmptyJID)
+		if onDemand {
+			// An answer to a reload request: only messages, never chat state, so it can't
+			// reset unread counts or names that are newer than this snapshot.
+			for _, hm := range conv.GetMessages() {
+				if evt, err := cli.ParseWebMessage(raw, hm.GetMessage()); err == nil {
+					s.onMessage(ctx, cli, evt, false)
+					nMsgs++
+				}
+			}
+			continue
+		}
 		name := firstNonEmpty(conv.GetName(), conv.GetDisplayName())
 		if name == "" && chat.Server != types.GroupServer {
 			name = contactName(ctx, cli, chat)

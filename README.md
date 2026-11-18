@@ -57,6 +57,9 @@ WhatsApp rotates it. Once you scan it, the page switches to your chats:
   Enter sends, Shift+Enter adds a new line.
 - Photos and stickers load as you scroll to them (click a photo to open it full size).
   Videos, GIFs and voice notes play inline when tapped; documents download.
+- Older photos, videos, voice notes and documents that show only a label ("📷 Photo")
+  have **Reload image** (or video, document…) in their press-and-hold menu: your phone
+  re-sends that part of the chat, and every attachment around it becomes viewable too.
 - Press and hold a message (or right-click it on desktop) for its menu: **Copy text**,
   and on your own messages **Delete for everyone**, which asks for confirmation first.
 - 📎 next to the message box attaches a photo, video, audio file or document (up to 100 MB);
@@ -124,6 +127,7 @@ All routes except `GET /health` need the `X-API-Key` header. Errors look like
 | GET | `/sessions/{id}/chats/summary` | `{archived, archivedUnread}`: archived chat count and how many have unread messages |
 | GET | `/sessions/{id}/chats/{chatId}/messages` | `?limit=50&before=<unix ts>`, newest first. To page back, pass the oldest `timestamp` you have as `before`. |
 | GET | `/sessions/{id}/chats/{chatId}/messages/{msgId}/media` | The attachment of an image, video, GIF, voice/audio, document or sticker message. `?thumb=1` returns its small embedded JPEG preview. Images, audio and video are served inline; everything else is sent as a download. `410 MEDIA_EXPIRED` means WhatsApp no longer has the file. |
+| POST | `/sessions/{id}/chats/{chatId}/messages/{msgId}/reload-media` | For media messages stored without download details (from before mywa kept them): asks your phone to re-send the 50 messages up to this one, which restores every attachment in that range. Waits up to 30 s and returns the message; `504 RELOAD_TIMEOUT` if the phone didn't answer. Your phone must be online. |
 | DELETE | `/sessions/{id}/chats/{chatId}/messages/{msgId}` | Deletes one of your own messages for everyone (within 60 hours of sending, as in WhatsApp). Emits `message.revoked`. |
 | POST | `/sessions/{id}/chats/{chatId}/archive` · `/unarchive` | Archives or unarchives the chat on your account (all devices). Archiving also unpins. Returns `{chatId, archived, pinned}`. |
 | POST | `/sessions/{id}/chats/{chatId}/pin` · `/unpin` | Pins or unpins the chat. At most 3 pinned chats; archived chats can't be pinned. |
@@ -201,6 +205,7 @@ Every frame is `{"event", "session", "timestamp", "data"}`:
 | `message.ack` | `{chatId, ids, status, timestamp}` |
 | `message.edited` | `{chatId, id, text}` |
 | `message.revoked` | `{chatId, id}` |
+| `message.media` | `{chatId, id, media}`: an older message's attachment became viewable (e.g. after a reload) |
 | `chat.updated` | `{chatId, archived}` or `{chatId, pinned}` after you (un)archive or (un)pin on the phone |
 | `chats.synced` | `null`: archived/pinned state was refreshed; re-read the chat lists |
 

@@ -141,6 +141,25 @@ func (f *fakeManager) SendMedia(_ context.Context, id string, req wa.SendMediaRe
 		Text: req.Caption + "|" + req.FileName + "|" + string(req.Data)}, nil
 }
 
+func (f *fakeManager) ReloadMedia(_ context.Context, id, chatID, msgID string) (store.Message, error) {
+	if msgID == "slow" {
+		return store.Message{}, wa.ErrReloadTimeout
+	}
+	return store.Message{ID: msgID, ChatID: chatID, Type: "image", Media: &store.MediaInfo{Mimetype: "image/jpeg"}}, nil
+}
+
+func TestReloadMedia(t *testing.T) {
+	ts, f, _ := newTestServer(t)
+	f.sessions["main"] = wa.Info{ID: "main"}
+	base := "/sessions/main/chats/1@s.whatsapp.net/messages/"
+	if resp, body := do(t, ts, "POST", base+"old/reload-media", "", true); resp.StatusCode != 200 || !strings.Contains(string(body), `"mimetype":"image/jpeg"`) {
+		t.Fatalf("reload: %d %s", resp.StatusCode, body)
+	}
+	if resp, body := do(t, ts, "POST", base+"slow/reload-media", "", true); resp.StatusCode != 504 || !strings.Contains(string(body), "RELOAD_TIMEOUT") {
+		t.Fatalf("timeout: %d %s", resp.StatusCode, body)
+	}
+}
+
 func TestSendMedia(t *testing.T) {
 	ts, f, _ := newTestServer(t)
 	f.sessions["main"] = wa.Info{ID: "main"}

@@ -197,3 +197,14 @@ func (s *Server) sendMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, msg)
 }
+
+// reloadMedia asks the phone to re-send an older media message so it can be shown.
+// It waits up to about 30 seconds and returns the message with its media details.
+func (s *Server) reloadMedia(w http.ResponseWriter, r *http.Request) {
+	msg, err := s.mgr.ReloadMedia(r.Context(), r.PathValue("id"), r.PathValue("chatId"), r.PathValue("msgId"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, msg)
+}

@@ -264,3 +264,37 @@ func TestChatState(t *testing.T) {
 		t.Fatal("not archived")
 	}
 }
+
+func TestFillMediaAndNextMessage(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	chat := "g@g.us"
+	_, _ = s.SaveMessage(ctx, "s1", Message{ID: "old", ChatID: chat, Timestamp: 10, Type: "image", Text: "cap"}, false)
+	_, _ = s.SaveMessage(ctx, "s1", Message{ID: "same-second", ChatID: chat, Timestamp: 10, Type: "text"}, false)
+	_, _ = s.SaveMessage(ctx, "s1", Message{ID: "newer", ChatID: chat, Timestamp: 20, Type: "text"}, false)
+
+	if n, err := s.NextMessage(ctx, "s1", chat, "old"); err != nil || n.ID != "same-second" {
+		t.Fatalf("next after old = %v, %v", n.ID, err)
+	}
+	if n, _ := s.NextMessage(ctx, "s1", chat, "same-second"); n.ID != "newer" {
+		t.Fatalf("next after same-second = %v", n.ID)
+	}
+	if _, err := s.NextMessage(ctx, "s1", chat, "newer"); err != ErrNotFound {
+		t.Fatalf("newest: %v", err)
+	}
+
+	m := Message{ID: "old", ChatID: chat, MediaBlob: []byte{1}, Media: &MediaInfo{Mimetype: "image/jpeg", Width: 4}}
+	if ok, err := s.FillMedia(ctx, "s1", m); !ok || err != nil {
+		t.Fatalf("fill: %v %v", ok, err)
+	}
+	if ok, _ := s.FillMedia(ctx, "s1", m); ok {
+		t.Fatal("second fill changed the message")
+	}
+	got, _ := s.GetMessage(ctx, "s1", chat, "old")
+	if got.Media == nil || got.Media.Width != 4 || got.Text != "cap" {
+		t.Fatalf("after fill: %+v", got)
+	}
+	if b, err := s.GetMediaBlob(ctx, "s1", chat, "old"); err != nil || len(b) != 1 {
+		t.Fatalf("blob: %v %v", b, err)
+	}
+}

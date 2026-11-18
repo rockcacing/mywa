@@ -23,8 +23,9 @@ const (
 	MessageAck      = "message.ack"
 	MessageEdited   = "message.edited"
 	MessageRevoked  = "message.revoked"
-	ChatUpdated     = "chat.updated" // a chat was archived/unarchived or pinned/unpinned
-	ChatsSynced     = "chats.synced" // archived/pinned state of all chats was refreshed
+	MessageMedia    = "message.media" // an older message's attachment became downloadable
+	ChatUpdated     = "chat.updated"  // a chat was archived/unarchived or pinned/unpinned
+	ChatsSynced     = "chats.synced"  // archived/pinned state of all chats was refreshed
 )
 
 // BufferSize is how many events a subscriber may fall behind before it is dropped.
