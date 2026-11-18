@@ -299,6 +299,8 @@
   const params = new URLSearchParams(location.search);
   const sid = params.get("session") || "main";
   const S = encodeURIComponent(sid);
+  // Served at "/" or behind a reverse proxy under a prefix such as "/mywa/"; API calls follow the page.
+  const BASE = location.pathname.replace(/\/+$/, "");
   const KEY_STORE = "mywa.apikey";
   const PAGE = 50;
   const $ = (id) => document.getElementById(id);
@@ -321,7 +323,7 @@
 
   // ---------- helpers ----------
   async function api(method, path, body) {
-    const res = await fetch(path, {
+    const res = await fetch(BASE + path, {
       method, cache: "no-store",
       headers: { "X-API-Key": key, ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
@@ -1172,7 +1174,7 @@
       if (asDocument) fd.append("asDocument", "true");
       fd.append("file", file, file.name || "image.png");
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", `/sessions/${S}/messages/send-media`);
+      xhr.open("POST", `${BASE}/sessions/${S}/messages/send-media`);
       xhr.setRequestHeader("X-API-Key", key);
       xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
@@ -1242,7 +1244,7 @@
   function openEvents() {
     if (ws) { ws.onclose = null; ws.close(); }
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(`${proto}//${location.host}/events?session=${S}&api_key=${encodeURIComponent(key)}`);
+    ws = new WebSocket(`${proto}//${location.host}${BASE}/events?session=${S}&api_key=${encodeURIComponent(key)}`);
     ws.onopen = () => banner("");
     ws.onmessage = (e) => {
       const ev = JSON.parse(e.data), d = ev.data;

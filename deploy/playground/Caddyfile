@@ -1,0 +1,27 @@
+# One Tailscale Funnel -> this Caddy listener -> one path per app.
+# To add an app: add a block below and a card in landing/index.html.
+{
+	admin off
+	auto_https off
+}
+
+:8000 {
+	bind 127.0.0.1
+
+	# mywa listens on 127.0.0.1:8080 and serves from "/", so the prefix is stripped.
+	redir /mywa /mywa/ 308
+	handle_path /mywa/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# tic-tac-toe-3d (Next.js, built with BASE_PATH=/tic-tac-toe-3d) keeps its prefix.
+	handle /tic-tac-toe-3d* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# Landing page at "/".
+	handle {
+		root * {$PLAYGROUND_LANDING}
+		file_server
+	}
+}

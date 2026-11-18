@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Playground</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#16181d; --muted:#6a7280; --line:#e2e5ea; --accent:#0a7d5a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --card:#181b21; --text:#eceef2; --muted:#98a1b0; --line:#272b33; --accent:#3ecf9f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:48px 16px; }
+  h1 { margin:0 0 4px; font-size:28px; }
+  .sub { margin:0 0 28px; color:var(--muted); }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:12px; }
+  a.card { display:block; padding:16px 18px; background:var(--card); border:1px solid var(--line);
+           border-radius:12px; color:inherit; text-decoration:none; }
+  a.card:hover, a.card:focus-visible { border-color:var(--accent); outline:none; }
+  .name { font-weight:600; }
+  .desc { color:var(--muted); font-size:14px; }
+  .path { color:var(--accent); font-size:13px; font-family:ui-monospace,Menlo,monospace; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Playground</h1>
+  <p class="sub">Small apps hosted here.</p>
+  <ul>
+    <li><a class="card" href="/mywa/">
+      <div class="name">mywa</div>
+      <div class="desc">Self-hosted WhatsApp web client: link a device, read and send messages.</div>
+      <div class="path">/mywa/</div>
+    </a></li>
+    <li><a class="card" href="/tic-tac-toe-3d/">
+      <div class="name">Tic-Tac-Toe 3D</div>
+      <div class="desc">Rotate a 3D board and play the AI or a friend.</div>
+      <div class="path">/tic-tac-toe-3d/</div>
+    </a></li>
+  </ul>
+</main>
+</body>
+</html>
