@@ -77,6 +77,12 @@
   .menu-list { position: absolute; right: 0; top: 100%; z-index: 5; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; min-width: 170px; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
   .menu-list button { display: block; width: 100%; text-align: left; border: 0; background: none; font-weight: 500; }
   .menu-list button:hover { background: var(--hover); }
+  .menu-info { padding: 8px 12px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .menu-info span { display: block; font-size: 12px; color: var(--muted); }
+  .menu-info strong { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  header .who.acct { display: flex; align-items: center; gap: 8px; }
+  header .who.acct .dot { width: 10px; height: 10px; }
+  header .who.acct strong { min-width: 0; }
   .banner { padding: 8px 16px; font-size: 13px; background: var(--hover); color: var(--warn); border-bottom: 1px solid var(--line); }
 
   .search { padding: 10px 16px; border-bottom: 1px solid var(--line); }
@@ -217,13 +223,14 @@
 <div class="shell" id="appView" hidden>
   <aside class="side">
     <header>
-      <div class="who">
+      <div class="who acct">
+        <span class="dot ok" id="appDot" role="img" aria-label="Online" title="Online"></span>
         <strong id="acctName">WhatsApp</strong>
-        <span><span class="dot ok" id="appDot"></span><span id="acctLine"></span></span>
       </div>
       <div class="menu">
         <button class="link" id="menuBtn" aria-label="Menu">⋮</button>
         <div class="menu-list" id="menuList" hidden>
+          <div class="menu-info"><span>Linked number</span><strong id="acctPhone"></strong></div>
           <button id="mDisconnect">Disconnect</button>
           <button id="mLogout">Log out (unlink)</button>
           <button id="mForget">Forget key</button>
@@ -333,6 +340,13 @@
   }
   function showError(msg) { $("err").hidden = !msg; $("err").textContent = msg || ""; }
 
+  // Show only the first and last 3 digits of the account's own number: +601****846.
+  function maskPhone(digits) {
+    digits = String(digits || "").replace(/\D/g, "");
+    if (digits.length <= 6) return "+" + digits.slice(0, 1) + "****" + digits.slice(-1);
+    return "+" + digits.slice(0, 3) + "****" + digits.slice(-3);
+  }
+
   function displayName(c) {
     if (c.name) return c.name;
     const [user, server] = c.id.split("@");
@@ -403,10 +417,12 @@
     // Once linked, stay on the chats view through brief reconnects.
     $("appView").hidden = !linked; $("cardView").hidden = linked;
     if (linked) {
-      const phone = "+" + i.jid.split("@")[0];
+      const phone = maskPhone(i.jid.split("@")[0]);
       $("acctName").textContent = i.pushName || phone;
-      $("acctLine").textContent = st === "ready" ? phone : "Reconnecting…";
+      $("acctPhone").textContent = phone;
       $("appDot").className = "dot " + cls;
+      const state = st === "ready" ? "Online" : "Reconnecting…";
+      $("appDot").title = state; $("appDot").setAttribute("aria-label", state);
       $("sendBtn").disabled = st !== "ready" || sending;
       if (lastStatus !== "ready" && st === "ready" && chats.length === 0) { loadChats(true); loadSummary(); }
       lastStatus = st;
