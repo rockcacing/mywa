@@ -19,15 +19,17 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		Addr:   env("MYWA_ADDR", ":8080"),
-		APIKey: os.Getenv("MYWA_API_KEY"),
+		Addr: env("MYWA_ADDR", ":8080"),
+		// Trimmed so a stray space or newline (e.g. `set MYWA_API_KEY=abc ` in cmd) doesn't
+		// become part of the key; the web page trims what the user types the same way.
+		APIKey: strings.TrimSpace(os.Getenv("MYWA_API_KEY")),
 		DBPath: env("MYWA_DB_PATH", "mywa.db"),
 	}
 	c.MediaDir = env("MYWA_MEDIA_DIR", filepath.Join(filepath.Dir(c.DBPath), "media"))
 	if err := c.LogLevel.UnmarshalText([]byte(env("MYWA_LOG_LEVEL", "info"))); err != nil {
 		return c, errors.New("MYWA_LOG_LEVEL must be one of debug, info, warn, error")
 	}
-	if strings.TrimSpace(c.APIKey) == "" {
+	if c.APIKey == "" {
 		return c, errors.New("MYWA_API_KEY is required")
 	}
 	if len(c.APIKey) < 16 {

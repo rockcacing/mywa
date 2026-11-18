@@ -1,6 +1,8 @@
 /bin/
 /mywa
+/media
 *.db
 *.db-wal
 *.db-shm
 .env
+.history

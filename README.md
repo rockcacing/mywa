@@ -20,6 +20,11 @@ of WhatsApp's multi-device protocol.
 
 ## Quick start
 
+```powershell
+$env:MYWA_API_KEY = $(openssl rand -hex 24)
+go run ./cmd/mywa
+```
+
 ```sh
 export MYWA_API_KEY=$(openssl rand -hex 24)   # required, 16+ characters
 go run ./cmd/mywa                              # or: make run
