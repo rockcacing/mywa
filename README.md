@@ -253,3 +253,14 @@ with an "outdated" error.
 
 Groups management, reactions, webhooks and the
 dashboard. See [PLAN.md](PLAN.md).
+
+## Running behind a reverse proxy under a path
+
+The web page derives its base path from the URL it was loaded from, so it works at `/` or under a
+prefix such as `/mywa/` (the proxy strips the prefix before forwarding). `deploy/playground/` has a
+Caddyfile and landing page that put several apps behind one Tailscale Funnel:
+
+```
+caddy run --config deploy/playground/Caddyfile --adapter caddyfile   # needs PLAYGROUND_LANDING set to the landing dir
+tailscale funnel --bg 8000
+```
